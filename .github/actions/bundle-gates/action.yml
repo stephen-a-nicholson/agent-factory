@@ -1,0 +1,62 @@
+name: "Bundle quality gates"
+description: >
+  Runs agent-factory's bundle quality gates (gates/) against a Databricks
+  Asset Bundle target. Requires the Databricks CLI to already be
+  authenticated in the environment (a DATABRICKS_HOST/DATABRICKS_TOKEN
+  pair, an OIDC-federated login step, or a ~/.databrickscfg profile) and
+  a checkout containing this repository's gates/ package and pyproject.toml.
+
+inputs:
+  target:
+    description: "Bundle target to validate, e.g. dev, test, prod"
+    required: true
+  working-directory:
+    description: "Directory containing databricks.yml and gates/"
+    required: false
+    default: "."
+  output:
+    description: "Report format: text or json"
+    required: false
+    default: "text"
+  databricks-cli-version:
+    description: "Databricks CLI version to install"
+    required: false
+    default: "0.244.0"
+
+outputs:
+  passed:
+    description: "true if no fail-severity finding was reported"
+    value: ${{ steps.run-gates.outputs.passed }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Databricks CLI
+      shell: bash
+      run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh -s -- ${{ inputs.databricks-cli-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: uv sync --frozen
+
+    - name: Run bundle quality gates
+      id: run-gates
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set +e
+        uv run python -m gates.run --target "${{ inputs.target }}" --output "${{ inputs.output }}"
+        status=$?
+        set -e
+        if [ "$status" -eq 0 ]; then
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+        fi
+        exit "$status"

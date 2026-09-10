@@ -1,0 +1,16 @@
+{
+  "bundle": { "target": "dev", "mode": "development" },
+  "resources": {
+    "jobs": {
+      "ingest_f1": {
+        "name": "ingest_f1",
+        "tasks": [
+          {
+            "task_key": "does_not_exist",
+            "spark_python_task": { "python_file": "src/nonexistent_module.py" }
+          }
+        ]
+      }
+    }
+  }
+}

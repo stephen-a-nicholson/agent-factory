@@ -1,0 +1,4 @@
+{
+  "bundle": { "target": "prod", "mode": "development" },
+  "resources": {}
+}

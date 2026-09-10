@@ -66,13 +66,13 @@ Done when: a deliberately bad system prompt causes evaluate to fail and the cham
 
 ## Phase 4: quality gates
 
-- [ ] `gates/` package: `Finding`, `Rule` base class, loader for `bundle validate -o json` and `bundle plan -o json`
-- [ ] Implement the ten rules in DESIGN.md section 7, each with pass and fail fixtures under `tests/gates/fixtures/`
-- [ ] `python -m gates.run --target test` CLI with text and JSON output and a non-zero exit on any fail
-- [ ] `.github/actions/bundle-gates/action.yml` composite action wrapping the CLI
-- [ ] README section for the gates showing use from another repo
+- [x] `gates/` package: `Finding`, `Rule` base class, loader for `bundle validate -o json` and `bundle plan -o json`
+- [x] Implement the ten rules in DESIGN.md section 7, each with pass and fail fixtures under `tests/gates/fixtures/`
+- [x] `python -m gates.run --target test` CLI with text and JSON output and a non-zero exit on any fail
+- [x] `.github/actions/bundle-gates/action.yml` composite action wrapping the CLI
+- [x] README section for the gates showing use from another repo
 
-Done when: all rules have passing tests and the action runs in this repo's PR workflow.
+Done when: all rules have passing tests and the action runs in this repo's PR workflow. **Rules and CLI done and verified for real, 2026-09-10; the PR-workflow half of "done when" is deferred to phase 5**, which is where the PR workflow itself gets built — see phase 5's notes for why that phase cannot be completed without the user setting up GitHub OIDC federation, something no amount of CLI access here can do. `uv run python -m gates.run --target dev` (with a real Databricks CLI profile) against the real, currently-deployed dev bundle reports `all gates passed`, 0 findings; `uv run pytest tests/gates/` passes all 35 tests (10 rules × pass-fixture + fail-fixture, plus targeted edge-case tests per rule and `gates/run.py`'s report/exit-code behaviour). Three rules diverge from DESIGN.md section 7's original table, each because of a decision already made and documented in an earlier phase; see DESIGN.md section 7 for the detail (in short: `required_tags`/`endpoint_scale_to_zero`'s "endpoint" clauses and `naming_convention`'s kebab-case clause all refer to the `model_serving_endpoints` resource type this project deliberately never declares, see phase 2 notes; `job_has_test` accepts either of this repo's two actual test-naming conventions rather than forcing one).
 
 ## Phase 5: GitHub Actions end to end
 

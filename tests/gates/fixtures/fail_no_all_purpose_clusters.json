@@ -1,0 +1,18 @@
+{
+  "bundle": { "target": "dev", "mode": "development" },
+  "resources": {
+    "jobs": {
+      "ingest_f1": {
+        "name": "ingest_f1",
+        "tags": { "owner": "a@b.com", "cost_centre": "demo" },
+        "tasks": [
+          {
+            "task_key": "ingest_structured",
+            "existing_cluster_id": "0101-000000-abc123",
+            "spark_python_task": { "python_file": "src/ingest/structured.py" }
+          }
+        ]
+      }
+    }
+  }
+}

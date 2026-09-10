@@ -1,0 +1,373 @@
+{
+  "bundle": {
+    "deployment": {
+      "lock": {
+        "enabled": false
+      }
+    },
+    "engine": "direct",
+    "environment": "dev",
+    "git": {
+      "actual_branch": "main",
+      "branch": "main",
+      "bundle_root_path": ".",
+      "commit": "1126bafdc6539173d4be88475199094d06efc6eb",
+      "origin_url": "git@github.com:stephen-a-nicholson/agent-factory.git"
+    },
+    "mode": "development",
+    "name": "agent-factory",
+    "target": "dev"
+  },
+  "resources": {
+    "alerts": {
+      "f1_eval_regression": {
+        "display_name": "[dev devuser] Formula 1 Analyst: RAG evaluation regression",
+        "evaluation": {
+          "comparison_operator": "LESS_THAN",
+          "empty_result_state": "OK",
+          "source": {
+            "name": "margin"
+          },
+          "threshold": {
+            "value": {
+              "double_value": 0
+            }
+          }
+        },
+        "parent_path": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/resources",
+        "query_text": "WITH latest AS (\n  SELECT metric, score,\n         ROW_NUMBER() OVER (PARTITION BY metric ORDER BY timestamp DESC) AS rn\n  FROM agent_factory_dev.${resources.schemas.agent_factory.name}.eval_results\n  WHERE domain = 'f1' AND target = 'dev' AND metric LIKE 'rag_eval.%'\n),\nthresholds(metric, threshold) AS (VALUES ('rag_eval.correctness', 0.7), ('rag_eval.groundedness', 0.75))\nSELECT MIN(latest.score - thresholds.threshold) AS margin\nFROM thresholds\nJOIN latest ON latest.metric = thresholds.metric AND latest.rn = 1\n",
+        "schedule": {
+          "pause_status": "PAUSED",
+          "quartz_cron_schedule": "0 0 8 * * ?",
+          "timezone_id": "UTC"
+        },
+        "warehouse_id": "d05c1b17e9bebf3a"
+      }
+    },
+    "dashboards": {
+      "f1_observability": {
+        "display_name": "[dev devuser] Formula 1 Analyst: observability",
+        "embed_credentials": false,
+        "parent_path": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/resources",
+        "serialized_dashboard": "{\n  \"datasets\": [\n    {\n      \"name\": \"eval_history\",\n      \"displayName\": \"RAG eval score history\",\n      \"queryLines\": [\n        \"SELECT metric, score, timestamp\\n\",\n        \"FROM agent_factory_dev.${resources.schemas.agent_factory.name}.eval_results\\n\",\n        \"WHERE domain = 'f1' AND target = 'dev'\\n\",\n        \"  AND metric LIKE 'rag_eval.%'\\n\",\n        \"ORDER BY timestamp\\n\"\n      ]\n    },\n    {\n      \"name\": \"latest_scores\",\n      \"displayName\": \"Latest RAG eval scores\",\n      \"queryLines\": [\n        \"SELECT metric, score, timestamp\\n\",\n        \"FROM (\\n\",\n        \"  SELECT metric, score, timestamp,\\n\",\n        \"         ROW_NUMBER() OVER (PARTITION BY metric ORDER BY timestamp DESC) AS rn\\n\",\n        \"  FROM agent_factory_dev.${resources.schemas.agent_factory.name}.eval_results\\n\",\n        \"  WHERE domain = 'f1' AND target = 'dev'\\n\",\n        \"    AND metric LIKE 'rag_eval.%'\\n\",\n        \")\\n\",\n        \"WHERE rn = 1\\n\",\n        \"ORDER BY metric\\n\"\n      ]\n    },\n    {\n      \"name\": \"endpoint_traffic\",\n      \"displayName\": \"Serving endpoint traffic\",\n      \"queryLines\": [\n        \"SELECT DATE(u.request_time) AS request_date, COUNT(*) AS request_count\\n\",\n        \"FROM system.serving.endpoint_usage u\\n\",\n        \"JOIN system.serving.served_entities e ON u.served_entity_id = e.served_entity_id\\n\",\n        \"WHERE e.endpoint_name = 'f1-agent-dev'\\n\",\n        \"GROUP BY DATE(u.request_time)\\n\",\n        \"ORDER BY request_date\\n\"\n      ]\n    }\n  ],\n  \"pages\": [\n    {\n      \"name\": \"observability\",\n      \"displayName\": \"Observability\",\n      \"pageType\": \"PAGE_TYPE_CANVAS\",\n      \"layout\": [\n        {\n          \"widget\": {\n            \"name\": \"eval_history_chart\",\n            \"queries\": [\n              {\n                \"name\": \"main_query\",\n                \"query\": {\n                  \"datasetName\": \"eval_history\",\n                  \"fields\": [\n                    {\n                      \"name\": \"timestamp\",\n                      \"expression\": \"`timestamp`\"\n                    },\n                    {\n                      \"name\": \"score\",\n                      \"expression\": \"`score`\"\n                    },\n                    {\n                      \"name\": \"metric\",\n                      \"expression\": \"`metric`\"\n                    }\n                  ],\n                  \"disaggregated\": true\n                }\n              }\n            ],\n            \"spec\": {\n              \"version\": 3,\n              \"widgetType\": \"line\",\n              \"encodings\": {\n                \"x\": {\n                  \"fieldName\": \"timestamp\",\n                  \"displayName\": \"Timestamp\",\n                  \"scale\": {\n                    \"type\": \"temporal\"\n                  }\n                },\n                \"y\": {\n                  \"fieldName\": \"score\",\n                  \"displayName\": \"Score\",\n                  \"scale\": {\n                    \"type\": \"quantitative\"\n                  }\n                },\n                \"color\": {\n                  \"fieldName\": \"metric\",\n                  \"displayName\": \"Metric\",\n                  \"scale\": {\n                    \"type\": \"categorical\"\n                  }\n                }\n              }\n            }\n          },\n          \"position\": {\n            \"x\": 0,\n            \"y\": 0,\n            \"width\": 6,\n            \"height\": 6\n          }\n        },\n        {\n          \"widget\": {\n            \"name\": \"latest_scores_table\",\n            \"queries\": [\n              {\n                \"name\": \"main_query\",\n                \"query\": {\n                  \"datasetName\": \"latest_scores\",\n                  \"fields\": [\n                    {\n                      \"name\": \"metric\",\n                      \"expression\": \"`metric`\"\n                    },\n                    {\n                      \"name\": \"score\",\n                      \"expression\": \"`score`\"\n                    },\n                    {\n                      \"name\": \"timestamp\",\n                      \"expression\": \"`timestamp`\"\n                    }\n                  ],\n                  \"disaggregated\": true\n                }\n              }\n            ],\n            \"spec\": {\n              \"version\": 3,\n              \"widgetType\": \"table\",\n              \"encodings\": {\n                \"columns\": [\n                  {\n                    \"fieldName\": \"metric\",\n                    \"displayName\": \"Metric\"\n                  },\n                  {\n                    \"fieldName\": \"score\",\n                    \"displayName\": \"Score\"\n                  },\n                  {\n                    \"fieldName\": \"timestamp\",\n                    \"displayName\": \"Last run\"\n                  }\n                ]\n              }\n            }\n          },\n          \"position\": {\n            \"x\": 0,\n            \"y\": 6,\n            \"width\": 6,\n            \"height\": 6\n          }\n        },\n        {\n          \"widget\": {\n            \"name\": \"endpoint_traffic_chart\",\n            \"queries\": [\n              {\n                \"name\": \"main_query\",\n                \"query\": {\n                  \"datasetName\": \"endpoint_traffic\",\n                  \"fields\": [\n                    {\n                      \"name\": \"request_date\",\n                      \"expression\": \"`request_date`\"\n                    },\n                    {\n                      \"name\": \"request_count\",\n                      \"expression\": \"`request_count`\"\n                    }\n                  ],\n                  \"disaggregated\": true\n                }\n              }\n            ],\n            \"spec\": {\n              \"version\": 3,\n              \"widgetType\": \"bar\",\n              \"encodings\": {\n                \"x\": {\n                  \"fieldName\": \"request_date\",\n                  \"displayName\": \"Date\",\n                  \"scale\": {\n                    \"type\": \"temporal\"\n                  }\n                },\n                \"y\": {\n                  \"fieldName\": \"request_count\",\n                  \"displayName\": \"Requests\",\n                  \"scale\": {\n                    \"type\": \"quantitative\"\n                  }\n                }\n              }\n            }\n          },\n          \"position\": {\n            \"x\": 0,\n            \"y\": 12,\n            \"width\": 6,\n            \"height\": 6\n          }\n        }\n      ]\n    }\n  ]\n}",
+        "warehouse_id": "d05c1b17e9bebf3a"
+      }
+    },
+    "genie_spaces": {
+      "f1_genie": {
+        "description": "Answers questions about Formula 1 results since 2020 and the FIA regulations that govern the sport.",
+        "parent_path": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/resources",
+        "serialized_space": "{\n  \"version\": 2,\n  \"config\": {\n    \"sample_questions\": [\n      {\n        \"id\": \"2e2d80f87c285ed2b8bd9a6c2d2349c2\",\n        \"question\": [\n          \"Who scored the most points in 2025?\"\n        ]\n      },\n      {\n        \"id\": \"973ff7607a38c1f68e558afc6a1bb3c2\",\n        \"question\": [\n          \"Which constructor had the fastest average pit stop in 2024?\"\n        ]\n      },\n      {\n        \"id\": \"6777ebd6a9cc3bf3bcbf1c87018808fe\",\n        \"question\": [\n          \"How many races did each driver retire from in 2023?\"\n        ]\n      }\n    ]\n  },\n  \"data_sources\": {\n    \"tables\": [\n      {\n        \"identifier\": \"agent_factory_dev.${resources.schemas.f1.name}.constructors\"\n      },\n      {\n        \"identifier\": \"agent_factory_dev.${resources.schemas.f1.name}.drivers\"\n      },\n      {\n        \"identifier\": \"agent_factory_dev.${resources.schemas.f1.name}.pit_stops\"\n      },\n      {\n        \"identifier\": \"agent_factory_dev.${resources.schemas.f1.name}.races\"\n      },\n      {\n        \"identifier\": \"agent_factory_dev.${resources.schemas.f1.name}.results\"\n      }\n    ]\n  },\n  \"instructions\": {\n    \"text_instructions\": [\n      {\n        \"id\": \"0053d02c96642798b9919e6f314a21b5\",\n        \"content\": [\n          \"Points are awarded 25-18-15-12-10-8-6-4-2-1 for positions 1 to 10.\\nA podium is a finish in position 1, 2 or 3.\\nIn the results table, status \\\"Finished\\\", the exact status \\\"Lapped\\\", or\\na lapped count such as \\\"+1 Lap\\\" all mean the driver was classified at\\nthe end of the race, just not on the lead lap. Any other status (for\\nexample \\\"Collision\\\", \\\"Engine\\\", \\\"Accident\\\") means the driver did not\\nfinish (DNF); the status text is the reason. Do not treat \\\"Lapped\\\" as\\na DNF: it is a distinct status from the \\\"+N Lap(s)\\\" family and easy to\\nmiss if you only filter on the \\\"+\\\" prefix.\\npit_stops.duration_seconds is time in the pit lane, not just time\\nstationary. It can include long outliers (tens of minutes) from red\\nflags or race stoppages while a car sits in the pits: for \\\"average\\\" or\\n\\\"fastest\\\" pit stop questions, use the median, or filter to stops under\\n60 seconds, rather than a plain mean, unless the question explicitly\\nasks about stoppage-affected stops.\"\n        ]\n      }\n    ]\n  }\n}",
+        "title": "[dev devuser] Formula 1 Analyst",
+        "warehouse_id": "d05c1b17e9bebf3a"
+      }
+    },
+    "jobs": {
+      "deploy_agent_f1": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "environments": [
+          {
+            "environment_key": "default",
+            "spec": {
+              "dependencies": [
+                "pyyaml",
+                "mlflow[databricks]",
+                "databricks-sdk",
+                "databricks-ai-search"
+              ],
+              "environment_version": "2"
+            }
+          }
+        ],
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 4,
+        "name": "[dev devuser] deploy_agent_f1",
+        "queue": {
+          "enabled": true
+        },
+        "tags": {
+          "cost_centre": "demo",
+          "data_classification": "public",
+          "dev": "devuser",
+          "owner": "dev-user@example.com"
+        },
+        "tasks": [
+          {
+            "environment_key": "default",
+            "spark_python_task": {
+              "parameters": [
+                "--domain",
+                "f1",
+                "--catalog",
+                "agent_factory_dev",
+                "--schema",
+                "${resources.schemas.f1.name}",
+                "--index-name",
+                "agent_factory_dev.${resources.schemas.f1.name}.f1_chunks",
+                "--target",
+                "dev",
+                "--genie-space-id",
+                "${resources.genie_spaces.f1_genie.id}",
+                "--warehouse-id",
+                "d05c1b17e9bebf3a"
+              ],
+              "python_file": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/files/src/agent/deploy.py"
+            },
+            "task_key": "deploy_agent"
+          }
+        ]
+      },
+      "evaluate_f1": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "environments": [
+          {
+            "environment_key": "default",
+            "spec": {
+              "dependencies": [
+                "pyyaml",
+                "mlflow[databricks]",
+                "databricks-sdk",
+                "databricks-ai-search"
+              ],
+              "environment_version": "2"
+            }
+          }
+        ],
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 4,
+        "name": "[dev devuser] evaluate_f1",
+        "queue": {
+          "enabled": true
+        },
+        "tags": {
+          "cost_centre": "demo",
+          "data_classification": "public",
+          "dev": "devuser",
+          "owner": "dev-user@example.com"
+        },
+        "tasks": [
+          {
+            "environment_key": "default",
+            "spark_python_task": {
+              "parameters": [
+                "--domain",
+                "f1",
+                "--catalog",
+                "agent_factory_dev",
+                "--schema",
+                "${resources.schemas.f1.name}",
+                "--target",
+                "dev",
+                "--eval-table",
+                "agent_factory_dev.${resources.schemas.agent_factory.name}.eval_results"
+              ],
+              "python_file": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/files/src/evaluate/rag.py"
+            },
+            "task_key": "evaluate"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "evaluate"
+              }
+            ],
+            "environment_key": "default",
+            "spark_python_task": {
+              "parameters": [
+                "--domain",
+                "f1",
+                "--catalog",
+                "agent_factory_dev",
+                "--schema",
+                "${resources.schemas.f1.name}",
+                "--target",
+                "dev"
+              ],
+              "python_file": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/files/src/agent/promote.py"
+            },
+            "task_key": "promote"
+          }
+        ]
+      },
+      "evaluate_genie_f1": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "environments": [
+          {
+            "environment_key": "default",
+            "spec": {
+              "dependencies": [
+                "pyyaml",
+                "databricks-sdk"
+              ],
+              "environment_version": "2"
+            }
+          }
+        ],
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 4,
+        "name": "[dev devuser] evaluate_genie_f1",
+        "queue": {
+          "enabled": true
+        },
+        "tags": {
+          "cost_centre": "demo",
+          "data_classification": "public",
+          "dev": "devuser",
+          "owner": "dev-user@example.com"
+        },
+        "tasks": [
+          {
+            "environment_key": "default",
+            "spark_python_task": {
+              "parameters": [
+                "--domain",
+                "f1",
+                "--space-id",
+                "${resources.genie_spaces.f1_genie.id}",
+                "--eval-table",
+                "agent_factory_dev.${resources.schemas.agent_factory.name}.eval_results",
+                "--target",
+                "dev"
+              ],
+              "python_file": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/files/src/evaluate/genie.py"
+            },
+            "task_key": "evaluate_genie_benchmarks"
+          }
+        ]
+      },
+      "ingest_f1": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "environments": [
+          {
+            "environment_key": "default",
+            "spec": {
+              "dependencies": [
+                "pyyaml"
+              ],
+              "environment_version": "2"
+            }
+          },
+          {
+            "environment_key": "documents",
+            "spec": {
+              "dependencies": [
+                "pyyaml"
+              ],
+              "environment_version": "3"
+            }
+          }
+        ],
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 4,
+        "name": "[dev devuser] ingest_f1",
+        "queue": {
+          "enabled": true
+        },
+        "tags": {
+          "cost_centre": "demo",
+          "data_classification": "public",
+          "dev": "devuser",
+          "owner": "dev-user@example.com"
+        },
+        "tasks": [
+          {
+            "environment_key": "documents",
+            "spark_python_task": {
+              "parameters": [
+                "--domain",
+                "f1",
+                "--catalog",
+                "agent_factory_dev",
+                "--schema",
+                "${resources.schemas.f1.name}",
+                "--volume-name",
+                "${resources.volumes.f1_raw.name}",
+                "--index-name",
+                "agent_factory_dev.${resources.schemas.f1.name}.f1_chunks"
+              ],
+              "python_file": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/files/src/ingest/documents.py"
+            },
+            "task_key": "ingest_documents"
+          },
+          {
+            "environment_key": "default",
+            "spark_python_task": {
+              "parameters": [
+                "--domain",
+                "f1",
+                "--catalog",
+                "agent_factory_dev",
+                "--schema",
+                "${resources.schemas.f1.name}"
+              ],
+              "python_file": "/Workspace/Users/dev-user@example.com/.bundle/agent-factory/dev/files/src/ingest/structured.py"
+            },
+            "task_key": "ingest_structured"
+          }
+        ]
+      }
+    },
+    "schemas": {
+      "agent_factory": {
+        "catalog_name": "agent_factory_dev",
+        "comment": "Shared schema for evaluation results and run metadata, used by every domain's evaluate job.\n",
+        "name": "dev_devuser_agent_factory"
+      },
+      "f1": {
+        "catalog_name": "agent_factory_dev",
+        "comment": "Answers questions about Formula 1 results since 2020 and the FIA regulations that govern the sport.",
+        "name": "dev_devuser_f1"
+      }
+    },
+    "vector_search_endpoints": {
+      "agent_factory_vs": {
+        "endpoint_type": "STANDARD",
+        "name": "agent_factory_vs"
+      }
+    },
+    "vector_search_indexes": {
+      "f1_chunks": {
+        "delta_sync_index_spec": {
+          "embedding_source_columns": [
+            {
+              "embedding_model_endpoint_name": "databricks-gte-large-en",
+              "name": "chunk_to_embed"
+            }
+          ],
+          "pipeline_type": "TRIGGERED",
+          "source_table": "agent_factory_dev.${resources.schemas.f1.name}.chunks"
+        },
+        "endpoint_name": "${resources.vector_search_endpoints.agent_factory_vs.name}",
+        "index_type": "DELTA_SYNC",
+        "name": "agent_factory_dev.${resources.schemas.f1.name}.f1_chunks",
+        "primary_key": "chunk_id"
+      }
+    },
+    "volumes": {
+      "f1_raw": {
+        "catalog_name": "agent_factory_dev",
+        "comment": "Raw seed files and downloaded documents for the f1 domain.",
+        "name": "f1_raw",
+        "schema_name": "${resources.schemas.f1.name}",
+        "volume_path": "/Volumes/agent_factory_dev/dev_devuser_f1/f1_raw",
+        "volume_type": "MANAGED"
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "bundle": { "target": "dev", "mode": "development" },
+  "resources": {
+    "vector_search_indexes": {
+      "f1_chunks": {
+        "delta_sync_index_spec": { "pipeline_type": "CONTINUOUS" }
+      }
+    }
+  }
+}

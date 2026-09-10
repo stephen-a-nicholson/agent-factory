@@ -1,0 +1,12 @@
+{
+  "bundle": { "target": "dev", "mode": "development" },
+  "resources": {
+    "jobs": {
+      "ingest_f1": {
+        "name": "ingest_f1",
+        "tags": { "owner": "a@b.com" },
+        "tasks": [{ "task_key": "ingest_structured" }]
+      }
+    }
+  }
+}

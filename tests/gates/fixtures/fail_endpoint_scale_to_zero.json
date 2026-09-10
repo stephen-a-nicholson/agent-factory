@@ -1,0 +1,12 @@
+{
+  "bundle": { "target": "dev", "mode": "development" },
+  "resources": {
+    "model_serving_endpoints": {
+      "f1_agent": {
+        "config": {
+          "served_entities": [{ "entity_name": "x", "scale_to_zero_enabled": false }]
+        }
+      }
+    }
+  }
+}

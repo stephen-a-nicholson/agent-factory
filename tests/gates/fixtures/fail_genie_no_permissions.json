@@ -1,0 +1,11 @@
+{
+  "bundle": { "target": "dev", "mode": "development" },
+  "resources": {
+    "genie_spaces": {
+      "f1_genie": {
+        "title": "F1",
+        "permissions": [{ "user_name": "a@b.com", "level": "CAN_VIEW" }]
+      }
+    }
+  }
+}
