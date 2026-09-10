@@ -1,0 +1,68 @@
+# Your domain. See docs/DESIGN.md section 3 for the full annotated
+# reference, and domains/f1/domain.yml for a complete worked example.
+# Delete any block (documents, genie, rag) your domain does not need;
+# only `structured` is required.
+name: {{.domain_name}}
+display_name: Replace with a human-friendly name
+description: >
+  Replace with a description of what this domain's agents answer
+  questions about.
+owner: replace-with-your-email@example.com
+tags:
+  cost_centre: replace-me
+  data_classification: replace-me
+
+structured:
+  loader: parquet_folder
+  source: data/
+  tables:
+    - name: replace_with_a_table_name
+      primary_key: replace_with_a_column_name
+      description: One row per what?
+  # relationships:
+  #   - from: some_table.some_id
+  #     to: other_table.some_id
+
+# Remove this block if you have no documents for a RAG agent.
+# documents:
+#   loader: url_list
+#   sources:
+#     - url: https://example.com/your-document.pdf
+#       title: A title Genie/RAG can cite
+#       category: a_category
+#   embedding_model: databricks-gte-large-en
+
+# Remove this block if you do not want a Genie agent over the structured
+# tables above.
+# genie:
+#   enabled: true
+#   instructions: |
+#     Anything a data analyst would need to know that isn't obvious from
+#     column names alone: units, edge cases, how to interpret a status
+#     column, which aggregation to use for a given kind of question.
+#   sample_questions:
+#     - A representative question your users will actually ask
+#   benchmarks: eval/genie.jsonl
+
+# Remove this block (and the documents block above) if you do not want a
+# RAG agent.
+# rag:
+#   enabled: true
+#   llm: databricks-meta-llama-3-3-70b-instruct
+#   system_prompt: |
+#     Instructions for the agent: when to use the retriever tool, when to
+#     use the Genie tool (if enabled below), and what to do when neither
+#     tool finds an answer.
+#   retriever:
+#     top_k: 6
+#     filter_columns: [category]
+#   tools:
+#     genie: false
+#   eval:
+#     dataset: eval/rag.jsonl
+#     judges: [correctness, groundedness, relevance]
+#     promotion_threshold: {}
+#       # Leave empty until you have run a real evaluate_{{.domain_name}}
+#       # job at least once: set these from the scores it actually
+#       # measures, not a number chosen upfront. See docs/DESIGN.md
+#       # section 8 and docs/PLAN.md phase 3/6 notes for why.

@@ -1,0 +1,22 @@
+{
+  "welcome_message": "Welcome to agent-factory: a Databricks Declarative Automation Bundle that turns a small domain.yml file into a deployed, evaluated Genie + RAG agent pair.\n\nThis scaffolds a copy of the whole repository, including the f1 example domain (kept as a working reference) and an empty folder for your own domain. See docs/DESIGN.md section 3 for the domain.yml contract, and README.md for the quickstart.",
+  "properties": {
+    "project_name": {
+      "type": "string",
+      "default": "agent-factory",
+      "description": "Directory name for the new project",
+      "order": 1,
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "pattern_match_failure_message": "Name must consist of letters, numbers, hyphens and underscores."
+    },
+    "domain_name": {
+      "type": "string",
+      "default": "my_domain",
+      "description": "Name for your own domain (creates an empty domains/<name>/ folder to fill in; f1 stays as a working example)",
+      "order": 2,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "pattern_match_failure_message": "Must match factory/schema.py's Domain.name pattern: lowercase letters, numbers and underscores, starting with a letter."
+    }
+  },
+  "success_message": "Your project is ready in '{{.project_name}}'.\n\nNext steps:\n  cd {{.project_name}}\n  uv sync\n  databricks auth login --host <your-workspace-url> --profile {{.project_name}}-dev\n  # Create a Unity Catalog catalog via the UI first if needed (see resources/core/shared.yml)\n  databricks bundle deploy -t dev -p {{.project_name}}-dev\n  databricks bundle run -t dev ingest_f1 -p {{.project_name}}-dev\n\nThen fill in domains/{{.domain_name}}/domain.yml with your own domain's tables and documents, per docs/DESIGN.md section 3, and repeat the deploy/ingest steps for it."
+}

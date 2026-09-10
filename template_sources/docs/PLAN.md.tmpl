@@ -1,0 +1,31 @@
+# {{.project_name}}: plan
+
+Scaffolded from agent-factory (see README.md and docs/DESIGN.md). f1 is kept as a working example domain; work through the phases below for your own domain, `{{.domain_name}}`. Tick items as they are done and add a one-line note if something diverged from docs/DESIGN.md.
+
+## Phase 0: get the example running
+
+- [ ] `uv sync`, `uv run pytest` (should pass against the f1 example with no changes)
+- [ ] `databricks auth login` against your workspace; `databricks bundle validate -t dev`
+- [ ] Create a Unity Catalog catalog for `${var.catalog}` via the UI if your workspace needs one (see `resources/core/shared.yml`)
+- [ ] `databricks bundle deploy -t dev`, then `databricks bundle run -t dev ingest_f1`
+
+Done when: `bundle deploy` and `ingest_f1` succeed against your own workspace, proving the factory itself works before you touch your own domain.
+
+## Phase 1: your domain
+
+- [ ] Fill in `domains/{{.domain_name}}/domain.yml` (see the comments in the file and docs/DESIGN.md section 3)
+- [ ] Add your structured data to `domains/{{.domain_name}}/data/` (Parquet, one file per table, matching `structured.tables`)
+- [ ] If you have documents, list them under `documents.sources` in domain.yml
+- [ ] `uv run python -m factory.generate`, then `databricks bundle validate -t dev`
+- [ ] `databricks bundle deploy -t dev`, then `databricks bundle run -t dev ingest_{{.domain_name}}`
+
+Done when: your structured tables (and chunks table, if you have documents) exist in Unity Catalog.
+
+## Phase 2: Genie and RAG
+
+- [ ] If you kept the `genie` block: deploy, ask the sample questions via the Genie UI or conversation API, write `domains/{{.domain_name}}/eval/genie.jsonl` with real verified ground truth, run `evaluate_genie_{{.domain_name}}`
+- [ ] If you kept the `rag`/`documents` blocks: `databricks bundle run -t dev deploy_agent_{{.domain_name}}`, test it via the Playground or invocations API, write `domains/{{.domain_name}}/eval/rag.jsonl`, run `evaluate_{{.domain_name}}` and set `rag.eval.promotion_threshold` from the real scores it measures (not a number chosen upfront, see docs/DESIGN.md section 8)
+
+Done when: your agent(s) answer real questions correctly and the evaluate job(s) pass.
+
+## Notes

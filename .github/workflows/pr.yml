@@ -36,6 +36,9 @@ jobs:
       - run: uv run python -m factory.generate
       - name: Fail if resources/generated is stale
         run: git diff --exit-code resources/generated
+      - run: uv run python -m factory.build_template
+      - name: Fail if template/ is stale
+        run: git diff --exit-code template
 
   validate-plan-and-gates:
     runs-on: ubuntu-latest
