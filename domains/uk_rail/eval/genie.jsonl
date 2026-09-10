@@ -1,0 +1,8 @@
+{"id": "busiest_station", "question": "Which station had the most entries and exits in Great Britain?", "answer_contains": [["liverpool street"], ["98,015,658", "98015658"]]}
+{"id": "york_usage", "question": "What was York station's usage rank and how many entries and exits did it have?", "answer_contains": [["48"], ["10,464,102", "10464102"]]}
+{"id": "scotland_station_count", "question": "How many stations are in the Scotland region?", "answer_contains": [["363"]]}
+{"id": "edinburgh_usage", "question": "How many entries and exits did Edinburgh station have?", "answer_contains": [["22,755,164", "22755164"]]}
+{"id": "busiest_wales_station", "question": "Which station in Wales had the most entries and exits?", "answer_contains": [["cardiff central"], ["12,513,720", "12513720"]]}
+{"id": "glasgow_central_usage", "question": "How many entries and exits did Glasgow Central have?", "answer_contains": [["25,293,930", "25293930"]]}
+{"id": "york_main_destination", "question": "For the station with the exact name 'York' (not other stations with York or Yorkshire in the name), what is its main origin or destination station?", "answer_contains": [["london kings cross", "kings cross"]]}
+{"id": "total_station_count", "question": "How many stations are in this dataset?", "answer_contains": [["2589", "2,589"]]}

@@ -58,6 +58,27 @@ def test_rule_fails_on_its_fixture(rule, fixture):
     assert all(f.rule == rule.name for f in findings)
 
 
+def test_naming_convention_accepts_multi_word_domain_names(monkeypatch):
+    # Real bug found adding the uk_rail domain in phase 6: the rule used
+    # to split a resource key on "_" and check the domain name was one of
+    # the resulting tokens, which can never match a domain name that
+    # itself contains an underscore. See gates/rules/naming.py.
+    monkeypatch.setattr("factory.schema.discover_domains", lambda: [])
+    monkeypatch.setattr(
+        "gates.rules.naming._domain_names",
+        lambda: {"uk_rail"},
+    )
+    config = {
+        "bundle": {"target": "dev"},
+        "resources": {
+            "jobs": {"ingest_uk_rail": {}, "deploy_agent_uk_rail": {}},
+            "schemas": {"uk_rail": {}},
+            "genie_spaces": {"uk_rail_genie": {}},
+        },
+    }
+    assert NamingConvention().check(config, None) == []
+
+
 def test_no_all_purpose_clusters_flags_new_cluster_too():
     config = {
         "bundle": {"target": "dev"},

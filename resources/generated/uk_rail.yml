@@ -1,0 +1,480 @@
+# GENERATED FILE. Do not edit by hand.
+# Source: domains/uk_rail/domain.yml
+# Regenerate with: uv run python -m factory.generate
+
+resources:
+  schemas:
+    uk_rail:
+      name: uk_rail
+      catalog_name: ${var.catalog}
+      comment: Answers questions about Great Britain National Rail station usage and
+        the National Rail Conditions of Travel.
+  volumes:
+    uk_rail_raw:
+      name: uk_rail_raw
+      catalog_name: ${var.catalog}
+      schema_name: uk_rail
+      volume_type: MANAGED
+      comment: Raw seed files and downloaded documents for the uk_rail domain.
+  jobs:
+    ingest_uk_rail:
+      name: ingest_uk_rail
+      tags:
+        owner: stephennicholson14@gmail.com
+        cost_centre: demo
+        data_classification: public
+      tasks:
+      - task_key: ingest_structured
+        environment_key: default
+        spark_python_task:
+          python_file: ../../src/ingest/structured.py
+          parameters:
+          - --domain
+          - uk_rail
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.uk_rail.name}
+      - task_key: ingest_documents
+        environment_key: documents
+        spark_python_task:
+          python_file: ../../src/ingest/documents.py
+          parameters:
+          - --domain
+          - uk_rail
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.uk_rail.name}
+          - --volume-name
+          - ${resources.volumes.uk_rail_raw.name}
+          - --index-name
+          - ${var.catalog}.${resources.schemas.uk_rail.name}.uk_rail_chunks
+      environments:
+      - environment_key: default
+        spec:
+          environment_version: '2'
+          dependencies:
+          - pyyaml
+      - environment_key: documents
+        spec:
+          environment_version: '3'
+          dependencies:
+          - pyyaml
+    evaluate_genie_uk_rail:
+      name: evaluate_genie_uk_rail
+      tags:
+        owner: stephennicholson14@gmail.com
+        cost_centre: demo
+        data_classification: public
+      tasks:
+      - task_key: evaluate_genie_benchmarks
+        environment_key: default
+        spark_python_task:
+          python_file: ../../src/evaluate/genie.py
+          parameters:
+          - --domain
+          - uk_rail
+          - --space-id
+          - ${resources.genie_spaces.uk_rail_genie.id}
+          - --eval-table
+          - ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results
+          - --target
+          - ${bundle.target}
+      environments:
+      - environment_key: default
+        spec:
+          environment_version: '2'
+          dependencies:
+          - pyyaml
+          - databricks-sdk
+    deploy_agent_uk_rail:
+      name: deploy_agent_uk_rail
+      tags:
+        owner: stephennicholson14@gmail.com
+        cost_centre: demo
+        data_classification: public
+      tasks:
+      - task_key: deploy_agent
+        environment_key: default
+        spark_python_task:
+          python_file: ../../src/agent/deploy.py
+          parameters:
+          - --domain
+          - uk_rail
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.uk_rail.name}
+          - --index-name
+          - ${var.catalog}.${resources.schemas.uk_rail.name}.uk_rail_chunks
+          - --target
+          - ${bundle.target}
+          - --genie-space-id
+          - ${resources.genie_spaces.uk_rail_genie.id}
+          - --warehouse-id
+          - ${var.warehouse_id}
+      environments:
+      - environment_key: default
+        spec:
+          environment_version: '2'
+          dependencies:
+          - pyyaml
+          - mlflow[databricks]
+          - databricks-sdk
+          - databricks-ai-search
+    evaluate_uk_rail:
+      name: evaluate_uk_rail
+      tags:
+        owner: stephennicholson14@gmail.com
+        cost_centre: demo
+        data_classification: public
+      tasks:
+      - task_key: evaluate
+        environment_key: default
+        spark_python_task:
+          python_file: ../../src/evaluate/rag.py
+          parameters:
+          - --domain
+          - uk_rail
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.uk_rail.name}
+          - --target
+          - ${bundle.target}
+          - --eval-table
+          - ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results
+      - task_key: promote
+        environment_key: default
+        depends_on:
+        - task_key: evaluate
+        spark_python_task:
+          python_file: ../../src/agent/promote.py
+          parameters:
+          - --domain
+          - uk_rail
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.uk_rail.name}
+          - --target
+          - ${bundle.target}
+      environments:
+      - environment_key: default
+        spec:
+          environment_version: '2'
+          dependencies:
+          - pyyaml
+          - mlflow[databricks]
+          - databricks-sdk
+          - databricks-ai-search
+  genie_spaces:
+    uk_rail_genie:
+      title: UK Rail Analyst
+      description: Answers questions about Great Britain National Rail station usage
+        and the National Rail Conditions of Travel.
+      warehouse_id: ${var.warehouse_id}
+      serialized_space: |-
+        {
+          "version": 2,
+          "config": {
+            "sample_questions": [
+              {
+                "id": "edc103b7314a4116a676a067525d7a8b",
+                "question": [
+                  "Which station had the most entries and exits in Great Britain?"
+                ]
+              },
+              {
+                "id": "7a39e6293e5ddb141028c5494ee738aa",
+                "question": [
+                  "What was York station's usage rank and how many entries and exits did it have?"
+                ]
+              },
+              {
+                "id": "0a729dc7ae0205bab12be902533b4332",
+                "question": [
+                  "Which stations are in the Scotland region?"
+                ]
+              }
+            ]
+          },
+          "data_sources": {
+            "tables": [
+              {
+                "identifier": "${var.catalog}.${resources.schemas.uk_rail.name}.stations"
+              }
+            ]
+          },
+          "instructions": {
+            "text_instructions": [
+              {
+                "id": "18ae99b4870c6b47ea2a422cec5a612a",
+                "content": [
+                  "all_ticket_entries_exits is the total annual entries and exits across\nall ticket types (full price, reduced price and season tickets\ncombined); full_price_entries_exits, reduced_price_entries_exits and\nseason_ticket_entries_exits are the components of that total, not\nseparate figures to add on top of it.\nusage_rank is the station's national rank by all_ticket_entries_exits,\n1 being the busiest station in Great Britain. Lower usage_rank means\nbusier, not less used.\ninterchanges is the number of passengers who changed trains at that\nstation as part of their journey, not a count of distinct connecting\nroutes or platforms.\nmain_destination_station and journeys_to_main_destination describe\nthe single most common origin or destination paired with this\nstation, not the total number of destinations served from it.\nA null value in any numeric column means the figure was suppressed or\nnot applicable in the source data (shown as \"[z]\" or \"[low]\" in the\noriginal ORR release), not that usage was zero; do not report a null\nas 0."
+                ]
+              }
+            ]
+          }
+        }
+  vector_search_indexes:
+    uk_rail_chunks:
+      name: ${var.catalog}.${resources.schemas.uk_rail.name}.uk_rail_chunks
+      endpoint_name: ${resources.vector_search_endpoints.agent_factory_vs.name}
+      primary_key: chunk_id
+      index_type: DELTA_SYNC
+      delta_sync_index_spec:
+        source_table: ${var.catalog}.${resources.schemas.uk_rail.name}.chunks
+        pipeline_type: ${var.vs_sync}
+        embedding_source_columns:
+        - name: chunk_to_embed
+          embedding_model_endpoint_name: databricks-gte-large-en
+  alerts:
+    uk_rail_eval_regression:
+      display_name: 'UK Rail Analyst: RAG evaluation regression'
+      warehouse_id: ${var.warehouse_id}
+      query_text: |
+        WITH latest AS (
+          SELECT metric, score,
+                 ROW_NUMBER() OVER (PARTITION BY metric ORDER BY timestamp DESC) AS rn
+          FROM ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results
+          WHERE domain = 'uk_rail' AND target = '${bundle.target}' AND metric LIKE 'rag_eval.%'
+        ),
+        thresholds(metric, threshold) AS (VALUES ('rag_eval.correctness', 0.9), ('rag_eval.groundedness', 0.8))
+        SELECT MIN(latest.score - thresholds.threshold) AS margin
+        FROM thresholds
+        JOIN latest ON latest.metric = thresholds.metric AND latest.rn = 1
+      evaluation:
+        comparison_operator: LESS_THAN
+        source:
+          name: margin
+        threshold:
+          value:
+            double_value: 0
+        empty_result_state: OK
+      schedule:
+        quartz_cron_schedule: 0 0 8 * * ?
+        timezone_id: UTC
+  dashboards:
+    uk_rail_observability:
+      display_name: 'UK Rail Analyst: observability'
+      warehouse_id: ${var.warehouse_id}
+      serialized_dashboard: |-
+        {
+          "datasets": [
+            {
+              "name": "eval_history",
+              "displayName": "RAG eval score history",
+              "queryLines": [
+                "SELECT metric, score, timestamp\n",
+                "FROM ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results\n",
+                "WHERE domain = 'uk_rail' AND target = '${bundle.target}'\n",
+                "  AND metric LIKE 'rag_eval.%'\n",
+                "ORDER BY timestamp\n"
+              ]
+            },
+            {
+              "name": "latest_scores",
+              "displayName": "Latest RAG eval scores",
+              "queryLines": [
+                "SELECT metric, score, timestamp\n",
+                "FROM (\n",
+                "  SELECT metric, score, timestamp,\n",
+                "         ROW_NUMBER() OVER (PARTITION BY metric ORDER BY timestamp DESC) AS rn\n",
+                "  FROM ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results\n",
+                "  WHERE domain = 'uk_rail' AND target = '${bundle.target}'\n",
+                "    AND metric LIKE 'rag_eval.%'\n",
+                ")\n",
+                "WHERE rn = 1\n",
+                "ORDER BY metric\n"
+              ]
+            },
+            {
+              "name": "endpoint_traffic",
+              "displayName": "Serving endpoint traffic",
+              "queryLines": [
+                "SELECT DATE(u.request_time) AS request_date, COUNT(*) AS request_count\n",
+                "FROM system.serving.endpoint_usage u\n",
+                "JOIN system.serving.served_entities e ON u.served_entity_id = e.served_entity_id\n",
+                "WHERE e.endpoint_name = 'uk_rail-agent-${bundle.target}'\n",
+                "GROUP BY DATE(u.request_time)\n",
+                "ORDER BY request_date\n"
+              ]
+            }
+          ],
+          "pages": [
+            {
+              "name": "observability",
+              "displayName": "Observability",
+              "pageType": "PAGE_TYPE_CANVAS",
+              "layout": [
+                {
+                  "widget": {
+                    "name": "eval_history_chart",
+                    "queries": [
+                      {
+                        "name": "main_query",
+                        "query": {
+                          "datasetName": "eval_history",
+                          "fields": [
+                            {
+                              "name": "timestamp",
+                              "expression": "`timestamp`"
+                            },
+                            {
+                              "name": "score",
+                              "expression": "`score`"
+                            },
+                            {
+                              "name": "metric",
+                              "expression": "`metric`"
+                            }
+                          ],
+                          "disaggregated": true
+                        }
+                      }
+                    ],
+                    "spec": {
+                      "version": 3,
+                      "widgetType": "line",
+                      "encodings": {
+                        "x": {
+                          "fieldName": "timestamp",
+                          "displayName": "Timestamp",
+                          "scale": {
+                            "type": "temporal"
+                          }
+                        },
+                        "y": {
+                          "fieldName": "score",
+                          "displayName": "Score",
+                          "scale": {
+                            "type": "quantitative"
+                          }
+                        },
+                        "color": {
+                          "fieldName": "metric",
+                          "displayName": "Metric",
+                          "scale": {
+                            "type": "categorical"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "position": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 6,
+                    "height": 6
+                  }
+                },
+                {
+                  "widget": {
+                    "name": "latest_scores_table",
+                    "queries": [
+                      {
+                        "name": "main_query",
+                        "query": {
+                          "datasetName": "latest_scores",
+                          "fields": [
+                            {
+                              "name": "metric",
+                              "expression": "`metric`"
+                            },
+                            {
+                              "name": "score",
+                              "expression": "`score`"
+                            },
+                            {
+                              "name": "timestamp",
+                              "expression": "`timestamp`"
+                            }
+                          ],
+                          "disaggregated": true
+                        }
+                      }
+                    ],
+                    "spec": {
+                      "version": 3,
+                      "widgetType": "table",
+                      "encodings": {
+                        "columns": [
+                          {
+                            "fieldName": "metric",
+                            "displayName": "Metric"
+                          },
+                          {
+                            "fieldName": "score",
+                            "displayName": "Score"
+                          },
+                          {
+                            "fieldName": "timestamp",
+                            "displayName": "Last run"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "position": {
+                    "x": 0,
+                    "y": 6,
+                    "width": 6,
+                    "height": 6
+                  }
+                },
+                {
+                  "widget": {
+                    "name": "endpoint_traffic_chart",
+                    "queries": [
+                      {
+                        "name": "main_query",
+                        "query": {
+                          "datasetName": "endpoint_traffic",
+                          "fields": [
+                            {
+                              "name": "request_date",
+                              "expression": "`request_date`"
+                            },
+                            {
+                              "name": "request_count",
+                              "expression": "`request_count`"
+                            }
+                          ],
+                          "disaggregated": true
+                        }
+                      }
+                    ],
+                    "spec": {
+                      "version": 3,
+                      "widgetType": "bar",
+                      "encodings": {
+                        "x": {
+                          "fieldName": "request_date",
+                          "displayName": "Date",
+                          "scale": {
+                            "type": "temporal"
+                          }
+                        },
+                        "y": {
+                          "fieldName": "request_count",
+                          "displayName": "Requests",
+                          "scale": {
+                            "type": "quantitative"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "position": {
+                    "x": 0,
+                    "y": 12,
+                    "width": 6,
+                    "height": 6
+                  }
+                }
+              ]
+            }
+          ]
+        }

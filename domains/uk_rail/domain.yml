@@ -1,0 +1,87 @@
+# Phase 6's second domain, deliberately small and deliberately different
+# in shape from f1: one structured table instead of five with no
+# relationships block, one document instead of three, no genie.tools.genie
+# usage on the RAG side kept off. See docs/PLAN.md phase 6 notes for what,
+# if anything, the generator needed to change to support this (nothing:
+# that is the point of this phase).
+name: uk_rail
+display_name: UK Rail Analyst
+description: >
+  Answers questions about Great Britain National Rail station usage and
+  the National Rail Conditions of Travel.
+owner: stephennicholson14@gmail.com
+tags:
+  cost_centre: demo
+  data_classification: public
+
+structured:
+  loader: parquet_folder
+  source: data/
+  tables:
+    - name: stations
+      primary_key: nlc
+      description: >
+        ORR Table 1410: annual passenger entries, exits and interchanges
+        by station, Great Britain, April 2024 to March 2025.
+
+genie:
+  enabled: true
+  instructions: |
+    all_ticket_entries_exits is the total annual entries and exits across
+    all ticket types (full price, reduced price and season tickets
+    combined); full_price_entries_exits, reduced_price_entries_exits and
+    season_ticket_entries_exits are the components of that total, not
+    separate figures to add on top of it.
+    usage_rank is the station's national rank by all_ticket_entries_exits,
+    1 being the busiest station in Great Britain. Lower usage_rank means
+    busier, not less used.
+    interchanges is the number of passengers who changed trains at that
+    station as part of their journey, not a count of distinct connecting
+    routes or platforms.
+    main_destination_station and journeys_to_main_destination describe
+    the single most common origin or destination paired with this
+    station, not the total number of destinations served from it.
+    A null value in any numeric column means the figure was suppressed or
+    not applicable in the source data (shown as "[z]" or "[low]" in the
+    original ORR release), not that usage was zero; do not report a null
+    as 0.
+  sample_questions:
+    - Which station had the most entries and exits in Great Britain?
+    - What was York station's usage rank and how many entries and exits did it have?
+    - Which stations are in the Scotland region?
+  benchmarks: eval/genie.jsonl
+
+documents:
+  loader: url_list
+  sources:
+    - url: https://assets.nationalrail.co.uk/e8xgegruud3g/7iflSDtwN50mQZMP6SKWH0/3bded7549df32c2f5eeadefac8bcb5d9/National_Rail_Conditions_of_Travel_July_2026.pdf
+      title: National Rail Conditions of Travel
+      category: conditions_of_travel
+  embedding_model: databricks-gte-large-en
+
+rag:
+  enabled: true
+  llm: databricks-meta-llama-3-3-70b-instruct
+  system_prompt: |
+    You answer questions about the National Rail Conditions of Travel
+    using the retriever tool. Only cite a condition or clause number if it
+    appears in the text the retriever actually returned; if the retriever
+    found no matching passages, say so plainly rather than guessing from
+    general knowledge. If the question is about station usage statistics
+    rather than the Conditions of Travel, call the Genie tool instead of
+    guessing, and do not invent figures.
+  retriever:
+    top_k: 6
+    filter_columns: [category]
+  tools:
+    genie: true
+  eval:
+    dataset: eval/rag.jsonl
+    judges: [correctness, groundedness, relevance]
+    # Set from a real evaluate_uk_rail run against this eval set
+    # (correctness 1.00, groundedness 0.89, relevance 1.00), not chosen
+    # upfront, matching f1's own threshold-setting approach. See
+    # docs/DESIGN.md section 8 and docs/PLAN.md notes, phase 6.
+    promotion_threshold:
+      correctness: 0.90
+      groundedness: 0.80

@@ -27,7 +27,7 @@ It is public, well understood by a technical audience, politically neutral, has 
 
 Naming: the domain is called `f1` in metadata. The repo name and README avoid using "Formula 1" or "F1" in a way that implies affiliation.
 
-A second, deliberately small domain is added late in the plan to prove the factory is not special-cased for the demo (see PLAN.md phase 6).
+A second, deliberately small domain is added late in the plan to prove the factory is not special-cased for the demo (see PLAN.md phase 6). That domain is `uk_rail` (underscore, not the hyphen in PLAN.md's suggested name: `Domain.name` is validated against `^[a-z][a-z0-9_]*$`): one structured table of real ORR station usage data and one document, the National Rail Conditions of Travel. It needed zero changes to the generator; the one real bug it found was in `gates/rules/naming.py`, not `factory/generate.py` (see PLAN.md phase 6 notes).
 
 ## 3. The domain contract
 

@@ -1,6 +1,11 @@
 """naming_convention: fail if a resource key is not snake_case, or if a
 domain-generated resource's key does not contain its domain's name as an
-underscore-delimited token.
+underscore-delimited token (the domain name itself may contain
+underscores, e.g. "uk_rail": real bug found adding that domain in phase
+6, this rule originally checked `domain_name in key.split("_")`, which
+can never match a multi-word domain name against any real resource key,
+since split("_") tokenises on every underscore including the domain
+name's own; fixed to a word-boundary-aware substring match instead).
 
 DESIGN.md section 7 also says "endpoint names are kebab-case": the only
 kebab-case endpoint name in this project (`<domain>-agent-<target>`,
@@ -48,8 +53,7 @@ class NamingConvention(Rule):
                             resource=path,
                         )
                     )
-                tokens = key.split("_")
-                if any(name in tokens for name in domain_names):
+                if any(_contains_as_token(key, name) for name in domain_names):
                     continue
                 if any(name in key for name in domain_names):
                     findings.append(
@@ -62,6 +66,13 @@ class NamingConvention(Rule):
                         )
                     )
         return findings
+
+
+def _contains_as_token(key: str, name: str) -> bool:
+    """True if `name` appears in `key` bounded by underscores or the
+    string's edges, e.g. "uk_rail" in "ingest_uk_rail" or "deploy_agent_f1",
+    but not "f1" in "f1chunksjob"."""
+    return re.search(rf"(?:^|_){re.escape(name)}(?:_|$)", key) is not None
 
 
 def _domain_names() -> set[str]:
