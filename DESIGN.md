@@ -1,0 +1,251 @@
+# agent-factory: design
+
+## 1. Purpose
+
+A reusable Databricks Declarative Automation Bundle that takes a metadata definition of a knowledge domain and produces, per environment:
+
+1. Unity Catalog schema, volumes and tables for the domain's structured data
+2. A document ingestion pipeline into a Delta table with chunks
+3. A vector search index over those chunks, on a shared endpoint
+4. A Genie agent configured with the domain's tables, instructions and sample questions
+5. A RAG agent served on a model serving endpoint, with the Genie agent available as a tool
+6. An evaluation job that scores the agents against a golden question set
+7. A promotion flow in GitHub Actions: PR checks, dev deploy, test deploy with eval gate, prod deploy with approval and rollback path
+8. A set of bundle quality gates that run before any deploy
+
+The consumer's job is to write one `domain.yml`, add data and an eval set, and push.
+
+## 2. Demo domain: Formula 1
+
+The demo domain is motorsport, specifically Formula 1 from 2020 onwards. It was chosen because it has two naturally different knowledge sources that map cleanly onto the two agent types:
+
+- **Structured data** (races, results, drivers, constructors, qualifying, pit stops, lap times) from the open Jolpica/Ergast API. This feeds the Genie agent. Questions like "who had the most podiums in 2025" or "average pit stop time by team at Silverstone" are exactly the shape Genie handles well and demos well.
+- **Documents** (FIA Sporting Regulations, Technical Regulations, Financial Regulations, published as PDFs) for the RAG agent. Questions like "what is the minimum car weight" or "what happens if a team exceeds the cost cap" need retrieval over long documents, not SQL.
+- **Combined questions** ("did any driver breach the track limits rule more than three times at Austria, and what is the penalty") show the RAG agent calling Genie as a tool.
+
+It is public, well understood by a technical audience, politically neutral, has no overlap with client work, and nobody is tired of it on LinkedIn. Data is snapshotted into `domains/f1/data/` as Parquet so the repo works offline and the ingestion job does not depend on a third-party API being up. A refresh script pulls new seasons on demand. Regulation PDFs are downloaded by the ingestion job from the FIA public URLs listed in `domain.yml` and stored in a volume; they are not committed.
+
+Naming: the domain is called `f1` in metadata. The repo name and README avoid using "Formula 1" or "F1" in a way that implies affiliation.
+
+A second, deliberately small domain is added late in the plan to prove the factory is not special-cased for the demo (see PLAN.md phase 6).
+
+## 3. The domain contract
+
+`domains/<name>/domain.yml` is the only file a consumer must write. Everything else is derived.
+
+```yaml
+name: f1
+display_name: Formula 1 Analyst
+description: >
+  Answers questions about Formula 1 results since 2020 and the FIA
+  regulations that govern the sport.
+owner: stephen@example.com
+tags:
+  cost_centre: demo
+  data_classification: public
+
+structured:
+  loader: parquet_folder          # parquet_folder | csv_folder | sql | custom
+  source: data/                   # relative to the domain folder
+  tables:
+    - name: races
+      primary_key: race_id
+      description: One row per Grand Prix
+    - name: results
+      primary_key: [race_id, driver_id]
+      description: Finishing position, points and status per driver per race
+    - name: drivers
+      primary_key: driver_id
+    - name: constructors
+      primary_key: constructor_id
+    - name: pit_stops
+      primary_key: [race_id, driver_id, stop]
+  relationships:                  # used to build Genie join hints
+    - from: results.race_id
+      to: races.race_id
+    - from: results.driver_id
+      to: drivers.driver_id
+
+documents:
+  loader: url_list                # url_list | volume_folder | none
+  sources:
+    - url: https://www.fia.com/sites/default/files/fia_2026_formula_1_sporting_regulations.pdf
+      title: 2026 Sporting Regulations
+      category: sporting
+    - url: https://www.fia.com/sites/default/files/fia_2026_formula_1_technical_regulations.pdf
+      title: 2026 Technical Regulations
+      category: technical
+  chunking:
+    strategy: recursive
+    chunk_size: 1000
+    chunk_overlap: 150
+  embedding_model: databricks-gte-large-en
+
+genie:
+  enabled: true
+  instructions: |
+    Points are awarded 25-18-15-12-10-8-6-4-2-1 for positions 1 to 10.
+    A podium is a finish in positions 1 to 3.
+    "Status" values other than "Finished" or "+N Laps" mean the driver retired.
+  sample_questions:
+    - Who scored the most points in 2025?
+    - Which constructor had the fastest average pit stop at Silverstone in 2024?
+    - How many races did each driver retire from in 2023?
+  benchmarks: eval/genie.jsonl    # question, expected SQL or expected answer
+
+rag:
+  enabled: true
+  llm: databricks-claude-sonnet-4-5   # or any serving endpoint name
+  system_prompt: |
+    You answer questions about Formula 1 regulations. Cite the article
+    number you relied on. If the question is about results or statistics,
+    call the Genie tool rather than guessing.
+  retriever:
+    top_k: 6
+    filter_columns: [category]
+  tools:
+    genie: true                   # expose the Genie agent as a tool
+  eval:
+    dataset: eval/rag.jsonl       # question, expected_answer, expected_sources
+    judges: [correctness, groundedness, relevance]
+    promotion_threshold:
+      correctness: 0.80
+      groundedness: 0.85
+```
+
+`factory/schema.py` holds the Pydantic model for this file and exports a JSON schema to `domains/domain.schema.json` so editors get validation.
+
+## 4. What the generator produces
+
+`factory/generate.py` reads every `domains/*/domain.yml` and writes `resources/generated/<name>.yml` containing:
+
+| Resource | Key pattern | Notes |
+|---|---|---|
+| `schemas` | `<name>` | one per domain, catalog from `${var.catalog}` |
+| `volumes` | `<name>_raw` | documents and seed files |
+| `jobs` | `ingest_<name>` | loads structured tables, downloads and chunks documents |
+| `vector_search_indexes` | `<name>_chunks` | delta sync, triggered in dev/test, continuous allowed only in prod |
+| `genie_spaces` | `<name>_genie` | `file_path` pointing at rendered `domains/<name>/genie/<name>.geniespace.json` |
+| `jobs` | `deploy_agent_<name>` | logs and registers the RAG agent in UC, updates serving endpoint |
+| `model_serving_endpoints` | `<name>-agent` | serves the registered model, per-target alias |
+| `jobs` | `evaluate_<name>` | runs MLflow evaluation, writes results table, fails below threshold |
+| `alerts` | `<name>_eval_regression` | fires if latest eval score drops below threshold |
+| `dashboards` | `<name>_observability` | eval history, retrieval stats, endpoint traffic |
+
+Shared resources in `resources/core/` (hand-written): the vector search endpoint, a shared `agent_factory` schema for eval results and run metadata, a SQL warehouse reference variable.
+
+The generator also renders the Genie agent JSON from the `genie` block plus the table list, and writes the eval datasets into the domain's schema on first ingest.
+
+The generator is idempotent and deterministic. CI runs it and diffs against the committed output.
+
+## 5. Bundle targets
+
+```yaml
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      catalog: agent_factory_dev
+      vs_sync: TRIGGERED
+    workspace:
+      host: ${var.dev_host}
+  test:
+    mode: production
+    variables:
+      catalog: agent_factory_test
+      vs_sync: TRIGGERED
+    workspace:
+      host: ${var.test_host}
+    run_as:
+      service_principal_name: ${var.test_sp}
+  prod:
+    mode: production
+    variables:
+      catalog: agent_factory
+      vs_sync: TRIGGERED        # consumers may switch to CONTINUOUS
+    workspace:
+      host: ${var.prod_host}
+    run_as:
+      service_principal_name: ${var.prod_sp}
+```
+
+Dev uses development mode so each engineer gets prefixed resources and the deploy is fast. Test and prod use production mode and run as a service principal.
+
+In the demo, test and prod can be two catalogs in the same workspace. Consumers with separate workspaces change the host variables only.
+
+## 6. CI/CD in GitHub Actions
+
+Auth is GitHub OIDC federated to a Databricks service principal per target. No PATs.
+
+**On pull request**
+
+1. `uv run ruff check`, `uv run pytest`
+2. `python -m factory.generate` then `git diff --exit-code resources/generated` (generated output must be committed)
+3. `databricks bundle validate -t test`
+4. `databricks bundle plan -t test -o json` piped into the quality gates; any `fail` blocks the PR
+5. Plan summary posted as a PR comment
+
+**On merge to main**
+
+1. Deploy to `test`
+2. Run `ingest_<domain>` for each domain (incremental, so cheap after the first run)
+3. Run `deploy_agent_<domain>` then `evaluate_<domain>`
+4. If evaluation fails threshold, the workflow stops and the previous test deployment stays live (the serving endpoint alias is only moved after eval passes)
+5. Tag the commit `test-passed-<sha>`
+
+**Promotion to prod**
+
+1. `workflow_dispatch` or environment approval on the `prod` GitHub Environment
+2. Deploy to `prod`, run deploy agent, run evaluate again against prod data
+3. Move the `champion` alias on the registered model only after prod eval passes
+4. Rollback is `databricks bundle deploy` of the previous tag plus moving the alias back; a `rollback.yml` workflow does both from a tag input
+
+## 7. Quality gates
+
+`gates/` is a standalone Python package that reads the JSON output of `databricks bundle plan` (and the resolved config from `bundle validate -o json`) and runs rules. Each rule returns pass, warn or fail with a message pointing at the resource key. It is exposed as a composite GitHub Action in `.github/actions/bundle-gates` so other repos can use it with one step.
+
+Initial rule set:
+
+| Rule | Severity | What it checks |
+|---|---|---|
+| `no_all_purpose_clusters` | fail | No `existing_cluster_id` and no `clusters` resources; jobs use serverless or job clusters |
+| `required_tags` | fail | Every job and endpoint carries `owner` and `cost_centre` tags |
+| `naming_convention` | fail | Resource keys are `snake_case`, endpoint names are `kebab-case`, all prefixed with the domain name |
+| `prod_no_dev_mode` | fail | `prod` and `test` targets are `mode: production` |
+| `genie_no_permissions` | fail | No `permissions` block on `genie_spaces` (known platform limitation) |
+| `vs_sync_in_nonprod` | fail | Vector search indexes are `TRIGGERED` outside prod |
+| `no_secrets_in_yaml` | fail | Regex scan for token, key and URL-with-credential patterns |
+| `job_has_test` | warn | Each job's entry point has a matching file under `tests/` |
+| `endpoint_scale_to_zero` | warn | Serving endpoints set `scale_to_zero_enabled: true` outside prod |
+| `eval_threshold_present` | fail | Every domain with `rag.enabled` defines promotion thresholds |
+
+Rules are plain Python classes with a `check(config, plan) -> list[Finding]` method. Adding a rule is one file plus two fixtures.
+
+## 8. Evaluation and promotion
+
+Evaluation uses MLflow's GenAI evaluation with built-in judges plus a domain-specific exact-match judge for Genie SQL benchmarks. Results land in `agent_factory.eval_results` with columns for domain, target, git sha, metric, score, timestamp. The evaluate job exits non-zero if any metric is below its threshold. The observability dashboard reads this table; the alert watches it.
+
+The RAG agent is written with the MLflow ResponsesAgent interface, logged with `mlflow.pyfunc.log_model`, registered in Unity Catalog as `<catalog>.<name>.rag_agent`, and served with the `champion` alias. Promotion means moving the alias, which means rollback is instant and does not require redeploying anything.
+
+## 9. Template packaging
+
+Once stable, the repo doubles as a custom bundle template: `databricks bundle init https://github.com/<user>/agent-factory` asks for a domain name and catalog and produces a ready-to-run bundle with an empty domain folder and the F1 domain as an example. The `databricks_template_schema.json` and templated files live at the repo root alongside the working project so the template and the reference implementation cannot drift.
+
+## 10. Out of scope
+
+- Multi-workspace Unity Catalog sharing
+- Fine-tuning
+- Any UI beyond Genie, Playground and the observability dashboard
+- Non-Azure clouds (should work but is not tested)
+
+## 11. Content plan (for reference)
+
+Posts this repo should produce, in order:
+
+1. The launch: one YAML file to a governed agent, with the demo
+2. What broke moving to the direct deployment engine and Genie agents in bundles
+3. Evaluation as a promotion gate: stopping a worse agent reaching prod
+4. Quality gates for bundles as a reusable GitHub Action
+5. Adding a second domain in an afternoon, and what that proved
+6. Reflective piece: what a "factory" actually means for an AI platform team
