@@ -1,0 +1,76 @@
+name: Deploy to test
+
+on:
+  push:
+    branches: [main]
+
+# NOTE: not exercised against a real GitHub Actions run in this session,
+# see pr.yml's top-of-file note and docs/AUTH.md.
+
+jobs:
+  discover-domains:
+    runs-on: ubuntu-latest
+    outputs:
+      domains: ${{ steps.list.outputs.domains }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - id: list
+        run: |
+          domains=$(uv run python -c "
+          import json
+          from factory.schema import discover_domains, load_domain
+          domains = [load_domain(p) for p in discover_domains()]
+          print(json.dumps([{'name': d.name, 'has_rag': bool(d.rag and d.rag.enabled)} for d in domains]))
+          ")
+          echo "domains=$domains" >> "$GITHUB_OUTPUT"
+
+  deploy-and-run:
+    needs: discover-domains
+    runs-on: ubuntu-latest
+    environment: test
+    strategy:
+      matrix:
+        domain: ${{ fromJson(needs.discover-domains.outputs.domains) }}
+      fail-fast: false
+    permissions:
+      id-token: write
+      contents: write
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      # bundle deploy is idempotent (see docs/PLAN.md phase 0 notes) so
+      # every matrix leg deploying it concurrently is safe, just wasteful;
+      # left this way for simplicity over adding a needs: dependency into
+      # a single deploy job every leg would then wait on serially.
+      - name: bundle deploy
+        run: databricks bundle deploy -t test
+      - name: ingest
+        run: databricks bundle run -t test "ingest_${{ matrix.domain.name }}"
+      - name: deploy agent
+        if: matrix.domain.has_rag
+        run: databricks bundle run -t test "deploy_agent_${{ matrix.domain.name }}"
+      - name: evaluate
+        if: matrix.domain.has_rag
+        run: databricks bundle run -t test "evaluate_${{ matrix.domain.name }}"
+        # A failing evaluate exits non-zero (src/evaluate/rag.py), which
+        # fails this step and this matrix leg: the workflow stops here for
+        # this domain and the previous test deployment's champion/serving
+        # endpoint stay untouched, since promote never ran. See
+        # docs/DESIGN.md section 6.
+
+  tag-on-success:
+    needs: deploy-and-run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: git tag "test-passed-${{ github.sha }}"
+      - run: git push origin "test-passed-${{ github.sha }}"

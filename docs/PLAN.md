@@ -76,14 +76,23 @@ Done when: all rules have passing tests and the action runs in this repo's PR wo
 
 ## Phase 5: GitHub Actions end to end
 
-- [ ] Configure OIDC federation for a Databricks service principal per target; document the exact steps in `docs/AUTH.md`
-- [ ] `pr.yml`: lint, tests, generate diff check, validate, plan, gates, plan summary comment
-- [ ] `main.yml`: deploy test, ingest, deploy agent, evaluate, tag on success
-- [ ] `prod.yml`: environment approval, deploy prod, deploy agent, evaluate, promote
-- [ ] `rollback.yml`: takes a tag, redeploys it, moves alias back
+- [x] Configure OIDC federation for a Databricks service principal per target; document the exact steps in `docs/AUTH.md`
+- [x] `pr.yml`: lint, tests, generate diff check, validate, plan, gates, plan summary comment
+- [x] `main.yml`: deploy test, ingest, deploy agent, evaluate, tag on success
+- [x] `prod.yml`: environment approval, deploy prod, deploy agent, evaluate, promote
+- [x] `rollback.yml`: takes a tag, redeploys it, moves alias back
 - [ ] Run a full cycle: PR with a prompt change, merge, watch test eval, approve prod, then roll back
 
-Done when: a PR to main reaches prod through approvals with no manual CLI steps, and rollback restores the previous agent.
+Done when: a PR to main reaches prod through approvals with no manual CLI steps, and rollback restores the previous agent. **Blocked, 2026-09-10, on something only the user can do — noted here rather than left silently incomplete.**
+
+The four workflow files (`pr.yml`, `main.yml`, `prod.yml`, `rollback.yml`) and `docs/AUTH.md` are written, following `docs/DESIGN.md` section 6's flow exactly, and are valid YAML (checked with `yaml.safe_load`, no `actionlint` available in this environment to check GitHub Actions expression syntax specifically). None of it has been exercised against a real GitHub Actions run, and cannot be, for two independent reasons neither of which is something more CLI access here would fix:
+
+1. **OIDC federation itself needs Databricks account admin access**, which this project's workspace does not have: it is a Databricks Free Edition workspace, confirmed back in phase 0 to have no account console and no account-level APIs at all, so there is no way to create a service principal to federate GitHub's OIDC issuer to in the first place. `docs/AUTH.md` documents the steps for a real (paid, account-admin-accessible) workspace, which is the correct target design per `CLAUDE.md`'s "GitHub OIDC federated to a Databricks service principal, no PATs" constraint, and states plainly that Free Edition cannot run this phase, rather than inventing a PAT-based workaround: a stored PAT is exactly the risk OIDC exists to avoid, and CLAUDE.md's constraint is a hard one, not a default to quietly route around.
+2. **Even with a suitable workspace, GitHub repository/environment configuration (secrets, the `test`/`prod` Environments, `prod`'s required-reviewers approval rule) can only be done by a human with admin access to this GitHub repository.** Not something achievable from a coding session against the local checkout, regardless of workspace tier.
+
+If a real paid workspace and GitHub admin access become available, follow `docs/AUTH.md` to wire authentication up, then this phase's last checklist item (a full PR-to-prod-to-rollback cycle, timed and recorded here) is the remaining work — genuinely quick once auth is in place, since phases 0-4 already prove every command these workflows call (`bundle deploy`, `bundle run ingest_<name>`/`deploy_agent_<name>`/`evaluate_<name>`, `gates.run`) works correctly on its own.
+
+Moving on to phase 6 per the user's explicit instruction to note blockers needing their action and continue rather than stall the session on them.
 
 ## Phase 6: prove reusability
 

@@ -1,0 +1,81 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to redeploy the bundle from"
+        required: true
+      domain:
+        description: "Domain name, e.g. f1"
+        required: true
+      catalog:
+        description: "Catalog holding the domain's schema (the target's ${var.catalog})"
+        required: true
+      schema:
+        description: "Resolved schema name (the target's ${resources.schemas.<domain>.name})"
+        required: true
+      target:
+        description: "Bundle target to roll back"
+        required: true
+        default: prod
+        type: choice
+        options: [test, prod]
+      champion-version:
+        description: >
+          rag_agent model version to move champion (and the serving
+          endpoint) back to. There is no automatic "previous champion"
+          lookup: Unity Catalog does not keep alias history, so the
+          operator running this has to know or look up (via
+          `databricks model-versions list`) which version was live before
+          the rollback is needed.
+        required: true
+
+# NOTE: not exercised against a real GitHub Actions run in this session,
+# see pr.yml's top-of-file note and docs/AUTH.md.
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target }}
+    permissions:
+      id-token: write
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: databricks/setup-cli@main
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: bundle deploy (redeploy the tagged bundle state)
+        run: databricks bundle deploy -t "${{ inputs.target }}"
+      - name: move champion back and repoint the serving endpoint
+        run: |
+          uv run python -c "
+          import sys
+          sys.path.insert(0, '.')
+          import mlflow
+          from src.agent.deploy import build_endpoint_name, update_serving_endpoint
+
+          domain = '${{ inputs.domain }}'
+          target = '${{ inputs.target }}'
+          catalog = '${{ inputs.catalog }}'
+          schema = '${{ inputs.schema }}'
+          version = '${{ inputs.champion-version }}'
+
+          mlflow.set_registry_uri('databricks-uc')
+          registered_model_name = f'{catalog}.{schema}.rag_agent'
+
+          client = mlflow.MlflowClient()
+          client.set_registered_model_alias(registered_model_name, 'champion', version)
+
+          endpoint_name = build_endpoint_name(domain, target)
+          update_serving_endpoint(endpoint_name, registered_model_name, version)
+          print(f'{registered_model_name} champion rolled back to version {version}')
+          print(f'serving endpoint {endpoint_name} now points at version {version}')
+          "

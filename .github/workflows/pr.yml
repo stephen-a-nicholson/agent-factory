@@ -1,0 +1,78 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+
+# NOTE: none of this workflow's auth details have been exercised against a
+# real GitHub Actions run in this session (no CI-capable Databricks
+# workspace was available, see docs/PLAN.md phase 5 notes). The `validate`/
+# `plan`/`gates` job's OIDC env vars (DATABRICKS_HOST, DATABRICKS_CLIENT_ID)
+# follow the Databricks CLI's documented GitHub OIDC support as of when
+# this was written; re-check against the current Databricks CLI docs
+# before relying on this for a first real run, per docs/AUTH.md.
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
+  generate-diff-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run python -m factory.generate
+      - name: Fail if resources/generated is stale
+        run: git diff --exit-code resources/generated
+
+  validate-plan-and-gates:
+    runs-on: ubuntu-latest
+    environment: test
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: bundle validate
+        run: databricks bundle validate -t test
+      - name: bundle plan
+        run: databricks bundle plan -t test -o json > plan.json
+      - name: quality gates
+        run: uv run python -m gates.run --target test --plan plan.json --output text
+      - name: Post plan summary comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = JSON.parse(fs.readFileSync('plan.json', 'utf8'));
+            const lines = Object.entries(plan.plan || {}).map(
+              ([key, entry]) => `- \`${key}\`: ${entry.action}`
+            );
+            const body = ['## Bundle plan (target: test)', ...lines].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

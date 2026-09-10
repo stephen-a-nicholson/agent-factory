@@ -1,0 +1,71 @@
+name: Promote to prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-passed-tag:
+        description: "test-passed-<sha> tag to promote (from main.yml)"
+        required: true
+
+# NOTE: not exercised against a real GitHub Actions run in this session,
+# see pr.yml's top-of-file note and docs/AUTH.md. The `environment: prod`
+# below is where GitHub's required-reviewers approval gate lives (set up
+# in docs/AUTH.md step 3); this workflow file has no approval logic of
+# its own.
+
+jobs:
+  discover-domains:
+    runs-on: ubuntu-latest
+    outputs:
+      domains: ${{ steps.list.outputs.domains }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.test-passed-tag }}
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - id: list
+        run: |
+          domains=$(uv run python -c "
+          import json
+          from factory.schema import discover_domains, load_domain
+          domains = [load_domain(p) for p in discover_domains()]
+          print(json.dumps([{'name': d.name, 'has_rag': bool(d.rag and d.rag.enabled)} for d in domains]))
+          ")
+          echo "domains=$domains" >> "$GITHUB_OUTPUT"
+
+  deploy-and-promote:
+    needs: discover-domains
+    runs-on: ubuntu-latest
+    environment: prod
+    strategy:
+      matrix:
+        domain: ${{ fromJson(needs.discover-domains.outputs.domains) }}
+      fail-fast: false
+    permissions:
+      id-token: write
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.test-passed-tag }}
+      - uses: databricks/setup-cli@main
+      - name: bundle deploy
+        run: databricks bundle deploy -t prod
+      - name: ingest
+        run: databricks bundle run -t prod "ingest_${{ matrix.domain.name }}"
+      - name: deploy agent
+        if: matrix.domain.has_rag
+        run: databricks bundle run -t prod "deploy_agent_${{ matrix.domain.name }}"
+      - name: evaluate and promote
+        if: matrix.domain.has_rag
+        run: databricks bundle run -t prod "evaluate_${{ matrix.domain.name }}"
+        # champion only moves, and the serving endpoint only updates, if
+        # this passes: the promote task inside evaluate_<name> depends on
+        # the evaluate task succeeding. See docs/DESIGN.md section 8 and
+        # the deploy.py/promote.py endpoint-ownership split documented in
+        # section 4.
