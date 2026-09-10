@@ -1,0 +1,396 @@
+{
+  "$defs": {
+    "ChunkingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_overlap": {
+          "minimum": 0,
+          "title": "Chunk Overlap",
+          "type": "integer"
+        },
+        "chunk_size": {
+          "exclusiveMinimum": 0,
+          "title": "Chunk Size",
+          "type": "integer"
+        },
+        "strategy": {
+          "default": "recursive",
+          "enum": [
+            "recursive",
+            "fixed"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chunk_size",
+        "chunk_overlap"
+      ],
+      "title": "ChunkingConfig",
+      "type": "object"
+    },
+    "DocumentSource": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "title",
+        "category"
+      ],
+      "title": "DocumentSource",
+      "type": "object"
+    },
+    "DocumentsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "chunking": {
+          "$ref": "#/$defs/ChunkingConfig"
+        },
+        "embedding_model": {
+          "title": "Embedding Model",
+          "type": "string"
+        },
+        "loader": {
+          "enum": [
+            "url_list",
+            "volume_folder",
+            "none"
+          ],
+          "title": "Loader",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/DocumentSource"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "loader",
+        "chunking",
+        "embedding_model"
+      ],
+      "title": "DocumentsConfig",
+      "type": "object"
+    },
+    "GenieConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "benchmarks": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Benchmarks"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "instructions": {
+          "default": "",
+          "title": "Instructions",
+          "type": "string"
+        },
+        "sample_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sample Questions",
+          "type": "array"
+        }
+      },
+      "title": "GenieConfig",
+      "type": "object"
+    },
+    "RagConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "eval": {
+          "$ref": "#/$defs/RagEvalConfig"
+        },
+        "llm": {
+          "title": "Llm",
+          "type": "string"
+        },
+        "retriever": {
+          "$ref": "#/$defs/RetrieverConfig"
+        },
+        "system_prompt": {
+          "default": "",
+          "title": "System Prompt",
+          "type": "string"
+        },
+        "tools": {
+          "$ref": "#/$defs/RagToolsConfig"
+        }
+      },
+      "required": [
+        "llm",
+        "eval"
+      ],
+      "title": "RagConfig",
+      "type": "object"
+    },
+    "RagEvalConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "judges": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Judges",
+          "type": "array"
+        },
+        "promotion_threshold": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Promotion Threshold",
+          "type": "object"
+        }
+      },
+      "required": [
+        "dataset"
+      ],
+      "title": "RagEvalConfig",
+      "type": "object"
+    },
+    "RagToolsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "genie": {
+          "default": false,
+          "title": "Genie",
+          "type": "boolean"
+        }
+      },
+      "title": "RagToolsConfig",
+      "type": "object"
+    },
+    "RetrieverConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "filter_columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Filter Columns",
+          "type": "array"
+        },
+        "top_k": {
+          "default": 6,
+          "exclusiveMinimum": 0,
+          "title": "Top K",
+          "type": "integer"
+        }
+      },
+      "title": "RetrieverConfig",
+      "type": "object"
+    },
+    "StructuredConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "loader": {
+          "enum": [
+            "parquet_folder",
+            "csv_folder",
+            "sql",
+            "custom"
+          ],
+          "title": "Loader",
+          "type": "string"
+        },
+        "relationships": {
+          "items": {
+            "$ref": "#/$defs/StructuredRelationship"
+          },
+          "title": "Relationships",
+          "type": "array"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "tables": {
+          "items": {
+            "$ref": "#/$defs/StructuredTable"
+          },
+          "title": "Tables",
+          "type": "array"
+        }
+      },
+      "required": [
+        "loader",
+        "source",
+        "tables"
+      ],
+      "title": "StructuredConfig",
+      "type": "object"
+    },
+    "StructuredRelationship": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "StructuredRelationship",
+      "type": "object"
+    },
+    "StructuredTable": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "primary_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Primary Key"
+        }
+      },
+      "required": [
+        "name",
+        "primary_key"
+      ],
+      "title": "StructuredTable",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The full contract of a `domains/<name>/domain.yml` file.",
+  "properties": {
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "display_name": {
+      "title": "Display Name",
+      "type": "string"
+    },
+    "documents": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DocumentsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "genie": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GenieConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "name": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Name",
+      "type": "string"
+    },
+    "owner": {
+      "title": "Owner",
+      "type": "string"
+    },
+    "rag": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RagConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "structured": {
+      "$ref": "#/$defs/StructuredConfig"
+    },
+    "tags": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "object"
+    }
+  },
+  "required": [
+    "name",
+    "display_name",
+    "description",
+    "owner",
+    "structured"
+  ],
+  "title": "Domain",
+  "type": "object"
+}

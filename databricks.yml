@@ -1,0 +1,47 @@
+# Bundle root. See docs/DESIGN.md section 5 for the target design and
+# docs/PLAN.md for what is implemented so far (phase 0: schema, volume and
+# a placeholder ingest job per domain, no Genie or RAG resources yet).
+bundle:
+  name: agent-factory
+  engine: direct
+
+include:
+  - resources/core/*.yml
+  - resources/generated/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds every domain schema.
+  vs_sync:
+    description: Vector search index sync mode (TRIGGERED or CONTINUOUS).
+    default: TRIGGERED
+
+# workspace.host is deliberately not set here: `databricks bundle validate`
+# rejects variable interpolation on workspace.host (auth-configuring fields
+# cannot be templated), and CLAUDE.md forbids committing workspace URLs.
+# Each target's host comes from the environment instead: locally, a
+# matching entry in ~/.databrickscfg selected by DATABRICKS_CONFIG_PROFILE
+# or `--profile`; in CI, the DATABRICKS_HOST env var set by the OIDC step
+# for that target. See docs/PLAN.md notes, phase 0.
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      catalog: agent_factory_dev
+
+  # No run_as on test/prod yet: that needs a service principal, which
+  # Databricks Free Edition doesn't have (no account console or
+  # account-level APIs). Until this deploys to a paid workspace, test and
+  # prod just run as whichever user deploys them. Add run_as back in
+  # phase 5 alongside the OIDC/service-principal CI setup, see
+  # docs/PLAN.md notes.
+  test:
+    mode: production
+    variables:
+      catalog: agent_factory_test
+
+  prod:
+    mode: production
+    variables:
+      catalog: agent_factory

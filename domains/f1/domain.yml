@@ -1,0 +1,47 @@
+# The domain contract. See docs/DESIGN.md section 3 for the full annotated
+# reference. This file is intentionally the only thing a consumer of the
+# factory needs to write; everything under resources/generated/ is derived
+# from it by factory/generate.py.
+#
+# Phase 0 status: structured block only. The documents, genie and rag
+# blocks are added in later phases (see docs/PLAN.md).
+name: f1
+display_name: Formula 1 Analyst
+description: >
+  Answers questions about Formula 1 results since 2020 and the FIA
+  regulations that govern the sport.
+owner: stephennicholson14@gmail.com
+tags:
+  cost_centre: demo
+  data_classification: public
+
+structured:
+  loader: parquet_folder
+  source: data/
+  tables:
+    - name: races
+      primary_key: race_id
+      description: One row per Grand Prix
+    - name: results
+      primary_key: [race_id, driver_id]
+      description: Finishing position, points and status per driver per race
+    - name: drivers
+      primary_key: driver_id
+      description: One row per driver
+    - name: constructors
+      primary_key: constructor_id
+      description: One row per constructor
+    - name: pit_stops
+      primary_key: [race_id, driver_id, stop]
+      description: One row per pit stop
+  relationships:
+    - from: results.race_id
+      to: races.race_id
+    - from: results.driver_id
+      to: drivers.driver_id
+    - from: results.constructor_id
+      to: constructors.constructor_id
+    - from: pit_stops.race_id
+      to: races.race_id
+    - from: pit_stops.driver_id
+      to: drivers.driver_id

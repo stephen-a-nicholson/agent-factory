@@ -1,0 +1,24 @@
+# Hand-written, shared across every domain. Never generated, never deleted
+# by factory/generate.py. See docs/DESIGN.md section 4.
+#
+# The bundle does NOT manage the catalog itself: on Databricks Free Edition,
+# `bundle deploy` creating a `catalogs` resource fails with "Metastore
+# storage root URL does not exist" because Free Edition's Default Storage
+# can only be wired to a new catalog through the UI, not through the
+# catalog-creation API a bundle uses. So ${var.catalog} must name a catalog
+# that already exists (create it once via Catalog > Create Catalog >
+# Default Storage in the UI) before running `bundle deploy`. See
+# docs/PLAN.md notes, phase 0.
+resources:
+  schemas:
+    agent_factory:
+      name: agent_factory
+      catalog_name: ${var.catalog}
+      comment: >
+        Shared schema for evaluation results and run metadata, used by every
+        domain's evaluate job.
+
+  vector_search_endpoints:
+    agent_factory_vs:
+      name: agent_factory_vs
+      endpoint_type: STANDARD

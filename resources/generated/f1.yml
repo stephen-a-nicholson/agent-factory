@@ -1,0 +1,34 @@
+# GENERATED FILE. Do not edit by hand.
+# Source: domains/f1/domain.yml
+# Regenerate with: uv run python -m factory.generate
+
+resources:
+  schemas:
+    f1:
+      name: f1
+      catalog_name: ${var.catalog}
+      comment: Answers questions about Formula 1 results since 2020 and the FIA regulations
+        that govern the sport.
+  volumes:
+    f1_raw:
+      name: f1_raw
+      catalog_name: ${var.catalog}
+      schema_name: f1
+      volume_type: MANAGED
+      comment: Raw seed files and downloaded documents for the f1 domain.
+  jobs:
+    ingest_f1:
+      name: ingest_f1
+      tags:
+        owner: stephennicholson14@gmail.com
+        cost_centre: demo
+        data_classification: public
+      tasks:
+      - task_key: ingest_structured
+        environment_key: default
+        spark_python_task:
+          python_file: ../../src/ingest/placeholder.py
+      environments:
+      - environment_key: default
+        spec:
+          environment_version: '2'

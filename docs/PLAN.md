@@ -4,16 +4,16 @@ Work through phases in order. Tick items as they are done and add a one-line not
 
 ## Phase 0: skeleton
 
-- [ ] Init repo with `uv`, `ruff`, `pytest`, `pre-commit` (ruff, yamllint, no-secrets hook)
-- [ ] `databricks.yml` with `engine: direct`, three targets, variables for catalog, hosts, service principals, warehouse id
-- [ ] `resources/core/` with shared schema `agent_factory`, vector search endpoint, warehouse variable
-- [ ] `factory/schema.py` Pydantic model for `domain.yml`; export JSON schema to `domains/domain.schema.json`
-- [ ] `factory/generate.py` that reads domains and writes `resources/generated/<name>.yml` with schema, volume and a placeholder ingest job only
-- [ ] `domains/f1/domain.yml` with structured block only
-- [ ] `tests/` for schema validation and generator determinism
-- [ ] `databricks bundle validate -t dev` passes
+- [x] Init repo with `uv`, `ruff`, `pytest`, `pre-commit` (ruff, yamllint, no-secrets hook)
+- [x] `databricks.yml` with `engine: direct`, three targets, variables for catalog, vector search sync mode (no service principal or warehouse variables yet, see notes)
+- [x] `resources/core/` with shared schema `agent_factory`, vector search endpoint
+- [x] `factory/schema.py` Pydantic model for `domain.yml`; export JSON schema to `domains/domain.schema.json`
+- [x] `factory/generate.py` that reads domains and writes `resources/generated/<name>.yml` with schema, volume and a placeholder ingest job only
+- [x] `domains/f1/domain.yml` with structured block only
+- [x] `tests/` for schema validation and generator determinism
+- [x] `databricks bundle validate -t dev` passes
 
-Done when: `uv run pytest` and `bundle validate` pass and a fresh clone can run `bundle deploy -t dev` creating the schema and volume.
+Done when: `uv run pytest` and `bundle validate` pass and a fresh clone can run `bundle deploy -t dev` creating the schema and volume. **Done, 2026-09-10**, against a real Databricks Free Edition workspace: deployed the `agent_factory` and `f1` schemas, the `f1_raw` volume, the `ingest_f1` placeholder job and the `agent_factory_vs` vector search endpoint (confirmed `ONLINE`); a second `bundle deploy` reports 0 to add / 0 to change / 5 unchanged, confirming idempotency.
 
 ## Phase 1: structured data and Genie
 
@@ -88,4 +88,19 @@ Done when: a colleague who has never seen the repo gets a working agent from `bu
 
 ## Notes
 
-(Append dated notes here as phases complete: what was learned, what diverged from DESIGN.md, anything worth a post.)
+**2026-09-10, phase 0 (in progress):** Skeleton built: `uv` project, ruff, pytest, pre-commit (ruff, ruff-format, yamllint, detect-secrets with an empty `.secrets.baseline`), `factory/schema.py` (Pydantic model for the full domain.yml contract from DESIGN.md section 3, with `documents`/`genie`/`rag` optional so phase-0 domains can omit them), `factory/generate.py` (schema, volume, placeholder `spark_python_task` ingest job per domain), `domains/f1/domain.yml` with structured block only, and `resources/core/shared.yml` (the `agent_factory` schema and the `agent_factory_vs` vector search endpoint). `uv run ruff check`, `ruff format --check`, `pytest` (9 tests) and `python -m factory.generate` (no diff against committed output) all pass.
+
+Diverged from DESIGN.md section 5: the example there sets `workspace.host: ${var.dev_host}` per target. Databricks CLI 1.16.0 rejects variable interpolation on any field that configures authentication (`workspace.host` included) — confirmed directly via `bundle validate`, which errors with "Variable interpolation is not supported for fields that configure authentication". Removed the `dev_host`/`test_host`/`prod_host` variables and every `workspace:` block; each target's host now has to come from `DATABRICKS_HOST` or a matching `~/.databrickscfg` profile at deploy time, never from committed YAML. DESIGN.md section 5 updated to match. Worth a line in a future post (item 2, "what broke moving to the direct deployment engine").
+
+Databricks CLI 1.16.0 installed locally to `~/.local/bin` (not on this machine by default; installed by extracting the release zip rather than the official install script, which wants `sudo` to write `/usr/local/bin`).
+
+`databricks bundle validate -t dev` cannot be pushed past the credential-resolution step in this environment: there is no Databricks CLI profile or reachable workspace here. It gets through parsing, variable resolution and resource shape validation cleanly (that is how the `workspace.host` interpolation bug above was actually caught), then fails on `default auth: cannot configure default credentials`. Per CLAUDE.md, stopping here rather than claiming a pass. Next session, run `databricks auth login` against a real workspace (or set `DATABRICKS_HOST`/`DATABRICKS_TOKEN`) and re-run validate, then `bundle deploy -t dev`, to close out phase 0's "done when".
+
+**2026-09-10, phase 0 complete:** Deployed for real against a Databricks Free Edition workspace, `databricks auth login` (browser OAuth, U2M) against a CLI profile. Confirmed Free Edition is viable for phases 0 to 4 (serverless, Unity Catalog, one Genie space, one AI Search/vector search endpoint, limited model serving are all included) but not for phase 5 as designed: Free Edition has no account console or account-level APIs, so there are no service principals to federate GitHub OIDC to, and it is one workspace/one metastore per account, so `test` and `prod` cannot be separate workspaces. Phase 5 will need to authenticate as a user (OAuth U2M) rather than a service principal, and treat `test`/`prod` as catalogs in one workspace. Also not for commercial use, no SLA — fine for this build, worth a caveat in the eventual README.
+
+Three real deploy-time findings, all fixed:
+1. `workspace.host: ${var.dev_host}` (as shown in DESIGN.md's original example) fails: variable interpolation is rejected on auth-configuring fields. Removed the host variables entirely (see note above); host now comes from `DATABRICKS_HOST` or a `~/.databrickscfg` profile at deploy time.
+2. A bundle variable declared with no `default` is required for every target's `validate`/`plan`, even a target whose resources never reference it (e.g. `test_sp` broke `-t dev` validate). Since Free Edition has no service principals to put in `test_sp`/`prod_sp`, and no resource references `warehouse_id` yet, removed all three from `databricks.yml` rather than giving them dummy defaults; they come back in the phases that actually consume them.
+3. A bundle-managed `catalogs` resource fails to deploy on Free Edition: `Metastore storage root URL does not exist... Default Storage is enabled in your account. You can use the UI to create a new catalog using Default Storage...`. Confirmed this is a Free Edition/API limitation, not bundle-specific, by reproducing it with a plain `databricks catalogs create` CLI call outside the bundle. So the bundle does not manage the catalog: `${var.catalog}` must name a catalog created once via the UI (Catalog > Create Catalog > Default Storage) before `bundle deploy`. Documented as a prerequisite in `resources/core/shared.yml`.
+
+Deployed and verified with real CLI output: `agent_factory` and `f1` schemas exist under `agent_factory_dev` (dev-mode prefixed to `dev_stephennicholson14_agent_factory` / `dev_stephennicholson14_f1`, confirming `mode: development` does what DESIGN.md section 5 says it should), `f1_raw` volume exists under the prefixed `f1` schema, `ingest_f1` job exists (`[dev stephennicholson14] ingest_f1`), and `agent_factory_vs` vector search endpoint is `ONLINE`. Re-running `bundle deploy` reports 0 to add / 0 to change / 5 unchanged.

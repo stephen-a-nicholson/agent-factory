@@ -148,15 +148,11 @@ targets:
     variables:
       catalog: agent_factory_dev
       vs_sync: TRIGGERED
-    workspace:
-      host: ${var.dev_host}
   test:
     mode: production
     variables:
       catalog: agent_factory_test
       vs_sync: TRIGGERED
-    workspace:
-      host: ${var.test_host}
     run_as:
       service_principal_name: ${var.test_sp}
   prod:
@@ -164,19 +160,21 @@ targets:
     variables:
       catalog: agent_factory
       vs_sync: TRIGGERED        # consumers may switch to CONTINUOUS
-    workspace:
-      host: ${var.prod_host}
     run_as:
       service_principal_name: ${var.prod_sp}
 ```
 
 Dev uses development mode so each engineer gets prefixed resources and the deploy is fast. Test and prod use production mode and run as a service principal.
 
-In the demo, test and prod can be two catalogs in the same workspace. Consumers with separate workspaces change the host variables only.
+`workspace.host` is deliberately absent from every target: `databricks bundle validate` refuses variable interpolation on fields that configure authentication, and CLAUDE.md forbids committing workspace URLs. Each target's host is resolved from the environment instead, either a matching profile in `~/.databrickscfg` locally, or the `DATABRICKS_HOST` environment variable set by the OIDC step in CI. Discovered against CLI 1.16.0 while validating phase 0; re-check if a future CLI version allows this.
+
+In the demo, test and prod can be two catalogs in the same workspace. Consumers with separate workspaces change which profile or `DATABRICKS_HOST` they deploy with, not the bundle YAML.
 
 ## 6. CI/CD in GitHub Actions
 
 Auth is GitHub OIDC federated to a Databricks service principal per target. No PATs.
+
+This needs a paid workspace with account-level admin. Databricks Free Edition has no account console or account-level APIs, so it cannot create service principals at all; confirmed while deploying phase 0 (see docs/PLAN.md notes, 2026-09-10). On Free Edition, phase 5 falls back to authenticating as a user (OAuth U2M) instead of a service principal, and `test`/`prod` are catalogs in the one available workspace rather than separate workspaces.
 
 **On pull request**
 
