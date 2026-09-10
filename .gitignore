@@ -220,3 +220,8 @@ __marimo__/
 # Databricks bundle local state
 .databricks/
 
+# Local PySpark/Delta test metastore
+spark-warehouse/
+metastore_db/
+derby.log
+

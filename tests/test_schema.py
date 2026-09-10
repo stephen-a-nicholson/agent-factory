@@ -19,11 +19,13 @@ def test_f1_domain_loads():
     }
 
 
-def test_f1_domain_has_no_optional_blocks_yet():
+def test_f1_domain_has_genie_but_not_documents_or_rag_yet():
     domain = load_domain(F1_DOMAIN_PATH)
     assert domain.documents is None
-    assert domain.genie is None
     assert domain.rag is None
+    assert domain.genie is not None
+    assert domain.genie.enabled is True
+    assert len(domain.genie.sample_questions) == 3
 
 
 def test_discover_domains_is_sorted_and_deterministic():

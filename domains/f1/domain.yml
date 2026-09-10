@@ -3,8 +3,8 @@
 # factory needs to write; everything under resources/generated/ is derived
 # from it by factory/generate.py.
 #
-# Phase 0 status: structured block only. The documents, genie and rag
-# blocks are added in later phases (see docs/PLAN.md).
+# Phase 1 status: structured and genie blocks. documents and rag are added
+# in phase 2 (see docs/PLAN.md).
 name: f1
 display_name: Formula 1 Analyst
 description: >
@@ -45,3 +45,27 @@ structured:
       to: races.race_id
     - from: pit_stops.driver_id
       to: drivers.driver_id
+
+genie:
+  enabled: true
+  instructions: |
+    Points are awarded 25-18-15-12-10-8-6-4-2-1 for positions 1 to 10.
+    A podium is a finish in position 1, 2 or 3.
+    In the results table, status "Finished", the exact status "Lapped", or
+    a lapped count such as "+1 Lap" all mean the driver was classified at
+    the end of the race, just not on the lead lap. Any other status (for
+    example "Collision", "Engine", "Accident") means the driver did not
+    finish (DNF); the status text is the reason. Do not treat "Lapped" as
+    a DNF: it is a distinct status from the "+N Lap(s)" family and easy to
+    miss if you only filter on the "+" prefix.
+    pit_stops.duration_seconds is time in the pit lane, not just time
+    stationary. It can include long outliers (tens of minutes) from red
+    flags or race stoppages while a car sits in the pits: for "average" or
+    "fastest" pit stop questions, use the median, or filter to stops under
+    60 seconds, rather than a plain mean, unless the question explicitly
+    asks about stoppage-affected stops.
+  sample_questions:
+    - Who scored the most points in 2025?
+    - Which constructor had the fastest average pit stop in 2024?
+    - How many races did each driver retire from in 2023?
+  benchmarks: eval/genie.jsonl

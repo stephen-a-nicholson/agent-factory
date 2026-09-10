@@ -15,6 +15,14 @@ variables:
   vs_sync:
     description: Vector search index sync mode (TRIGGERED or CONTINUOUS).
     default: TRIGGERED
+  warehouse_id:
+    description: >
+      SQL warehouse used by Genie spaces, alerts and dashboards. Looked up
+      by name so a fresh clone works with zero config against the one
+      warehouse Databricks Free Edition gives every account; override with
+      --var warehouse_id=<id> on a workspace with a differently named one.
+    lookup:
+      warehouse: Serverless Starter Warehouse
 
 # workspace.host is deliberately not set here: `databricks bundle validate`
 # rejects variable interpolation on workspace.host (auth-configuring fields

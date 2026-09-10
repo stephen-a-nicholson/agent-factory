@@ -125,16 +125,17 @@ rag:
 | `volumes` | `<name>_raw` | documents and seed files |
 | `jobs` | `ingest_<name>` | loads structured tables, downloads and chunks documents |
 | `vector_search_indexes` | `<name>_chunks` | delta sync, triggered in dev/test, continuous allowed only in prod |
-| `genie_spaces` | `<name>_genie` | `file_path` pointing at rendered `domains/<name>/genie/<name>.geniespace.json` |
+| `genie_spaces` | `<name>_genie` | `serialized_space` (inline), not `file_path` (see below) |
 | `jobs` | `deploy_agent_<name>` | logs and registers the RAG agent in UC, updates serving endpoint |
 | `model_serving_endpoints` | `<name>-agent` | serves the registered model, per-target alias |
-| `jobs` | `evaluate_<name>` | runs MLflow evaluation, writes results table, fails below threshold |
+| `jobs` | `evaluate_genie_<name>` | runs the Genie benchmark questions, writes results table, fails below threshold |
+| `jobs` | `evaluate_<name>` | runs MLflow evaluation for the RAG agent, writes results table, fails below threshold |
 | `alerts` | `<name>_eval_regression` | fires if latest eval score drops below threshold |
 | `dashboards` | `<name>_observability` | eval history, retrieval stats, endpoint traffic |
 
 Shared resources in `resources/core/` (hand-written): the vector search endpoint, a shared `agent_factory` schema for eval results and run metadata, a SQL warehouse reference variable.
 
-The generator also renders the Genie agent JSON from the `genie` block plus the table list, and writes the eval datasets into the domain's schema on first ingest.
+The generator also renders the Genie agent JSON from the `genie` block plus the table list, embedded directly into `resources/generated/<name>.yml` as `serialized_space` rather than written to a separate `domains/<name>/genie/<name>.geniespace.json` and referenced via `file_path`: content behind `file_path` is uploaded verbatim with no `${var...}`/`${resources...}` substitution, which breaks table identifiers that need the target's resolved catalog and (in dev mode) prefixed schema name. `serialized_space` is a normal YAML string field, so it gets substituted like any other. The Genie space create/update API also requires `data_sources.tables` sorted by identifier, which the generator does before emitting. The generator writes the eval datasets into the domain's schema on first ingest.
 
 The generator is idempotent and deterministic. CI runs it and diffs against the committed output.
 

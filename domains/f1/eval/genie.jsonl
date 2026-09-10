@@ -1,0 +1,15 @@
+{"id": "points_leader_2025", "question": "Who scored the most points in 2025?", "answer_contains": [["norris"], ["394"]]}
+{"id": "most_wins_2022_2024", "question": "Which driver had the most race wins between 2022 and 2024?", "answer_contains": [["verstappen"], ["43"]]}
+{"id": "constructors_points_2023", "question": "Which constructor scored the most points in 2023?", "answer_contains": [["red bull", "red_bull"], ["790"]]}
+{"id": "race_count_2021", "question": "How many races were held in the 2021 season?", "answer_contains": [["22"]]}
+{"id": "podiums_2024", "question": "Which driver had the most podium finishes in 2024?", "answer_contains": [["verstappen"], ["14"]]}
+{"id": "most_retirements_overall", "question": "Which driver has the most retirements across all seasons in the data?", "answer_contains": [["stroll"]]}
+{"id": "monaco_2023_winner", "question": "Who won the Monaco Grand Prix in 2023?", "answer_contains": [["verstappen"]]}
+{"id": "constructor_count_2020", "question": "How many distinct constructors competed in 2020?", "answer_contains": [["10"]]}
+{"id": "verstappen_constructor_2021", "question": "Which constructor did Max Verstappen drive for in 2021?", "answer_contains": [["red bull", "red_bull"]]}
+{"id": "mercedes_nationality", "question": "What nationality is the Mercedes constructor?", "answer_contains": [["german"]]}
+{"id": "verstappen_pit_stops_2024", "question": "How many pit stops did Max Verstappen make in the 2024 season?", "answer_contains": [["40"]]}
+{"id": "hamilton_code_nationality", "question": "What is Lewis Hamilton's driver code and nationality?", "answer_contains": [["ham"], ["british"]]}
+{"id": "races_with_pit_stops_2020", "question": "In how many 2020 races is there pit stop data?", "answer_contains": [["17"]]}
+{"id": "driver_count_2025", "question": "How many distinct drivers competed in the 2025 season?", "answer_contains": [["21"]]}
+{"id": "first_race_2020", "question": "What race and circuit was round 1 of the 2020 season?", "answer_contains": [["austrian"], ["red bull ring"]]}
