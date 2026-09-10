@@ -69,16 +69,12 @@ structured:
 documents:
   loader: url_list                # url_list | volume_folder | none
   sources:
-    - url: https://www.fia.com/sites/default/files/fia_2026_formula_1_sporting_regulations.pdf
+    - url: https://www.fia.com/system/files/documents/fia_2026_f1_regulations_-_section_b_sporting_-_iss_05_-_2026-02-27.pdf
       title: 2026 Sporting Regulations
       category: sporting
-    - url: https://www.fia.com/sites/default/files/fia_2026_formula_1_technical_regulations.pdf
+    - url: https://www.fia.com/system/files/documents/fia_2026_f1_regulations_-_section_c_technical_-_iss_17_-_2026-04-28.pdf
       title: 2026 Technical Regulations
       category: technical
-  chunking:
-    strategy: recursive
-    chunk_size: 1000
-    chunk_overlap: 150
   embedding_model: databricks-gte-large-en
 
 genie:
@@ -95,7 +91,9 @@ genie:
 
 rag:
   enabled: true
-  llm: databricks-claude-sonnet-4-5   # or any serving endpoint name
+  llm: databricks-gpt-oss-120b   # any chat-task serving endpoint name; no Claude models
+                                  # are available as Databricks foundation models on
+                                  # Free Edition, see docs/PLAN.md notes, phase 2
   system_prompt: |
     You answer questions about Formula 1 regulations. Cite the article
     number you relied on. If the question is about results or statistics,
@@ -126,8 +124,7 @@ rag:
 | `jobs` | `ingest_<name>` | loads structured tables, downloads and chunks documents |
 | `vector_search_indexes` | `<name>_chunks` | delta sync, triggered in dev/test, continuous allowed only in prod |
 | `genie_spaces` | `<name>_genie` | `serialized_space` (inline), not `file_path` (see below) |
-| `jobs` | `deploy_agent_<name>` | logs and registers the RAG agent in UC, updates serving endpoint |
-| `model_serving_endpoints` | `<name>-agent` | serves the registered model, per-target alias |
+| `jobs` | `deploy_agent_<name>` | logs and registers the RAG agent in UC, creates or updates the serving endpoint directly (no `model_serving_endpoints` resource, see below) |
 | `jobs` | `evaluate_genie_<name>` | runs the Genie benchmark questions, writes results table, fails below threshold |
 | `jobs` | `evaluate_<name>` | runs MLflow evaluation for the RAG agent, writes results table, fails below threshold |
 | `alerts` | `<name>_eval_regression` | fires if latest eval score drops below threshold |
@@ -136,6 +133,12 @@ rag:
 Shared resources in `resources/core/` (hand-written): the vector search endpoint, a shared `agent_factory` schema for eval results and run metadata, a SQL warehouse reference variable.
 
 The generator also renders the Genie agent JSON from the `genie` block plus the table list, embedded directly into `resources/generated/<name>.yml` as `serialized_space` rather than written to a separate `domains/<name>/genie/<name>.geniespace.json` and referenced via `file_path`: content behind `file_path` is uploaded verbatim with no `${var...}`/`${resources...}` substitution, which breaks table identifiers that need the target's resolved catalog and (in dev mode) prefixed schema name. `serialized_space` is a normal YAML string field, so it gets substituted like any other. The Genie space create/update API also requires `data_sources.tables` sorted by identifier, which the generator does before emitting. The generator writes the eval datasets into the domain's schema on first ingest.
+
+Document parsing and chunking uses Databricks' native `ai_parse_document` and `ai_prep_search` SQL functions rather than a hand-rolled splitter: `ai_parse_document` extracts layout-aware elements (text, tables, headers) from the downloaded PDF, and `ai_prep_search` turns that into embedding-ready chunks with document context (title, section header, page number) baked into each chunk's text. Confirmed working against a real Free Edition workspace on the actual FIA regulation PDFs while building phase 2 (see docs/PLAN.md notes). Because of this, `documents.chunking` (`strategy`/`chunk_size`/`chunk_overlap`) was dropped from the domain.yml contract: neither function takes a configurable chunk size or overlap, so those knobs had nothing to control. `documents.embedding_model` remains: it names the model serving endpoint the vector search index's delta sync uses to compute embeddings from each chunk, which is a separate step from parsing/chunking.
+
+There is deliberately no bundle-declared `model_serving_endpoints` resource, even though CLAUDE.md lists it among the resource types this project depends on: `deploy_agent_<name>` creates and updates the endpoint directly via the Databricks SDK instead (`src/agent/deploy.py`, `update_serving_endpoint`). Two independent, both real, reasons. First, a genuine circular dependency: the endpoint needs the domain's `rag_agent` model to already exist, which it doesn't until `deploy_agent_<name>` runs, so the bundle resource fails on a fresh deploy exactly like the Genie space and vector search index do at first — except the job itself also referenced the endpoint's resolved name in its parameters, and the direct engine treats any `${resources...}` reference as a hard dependency (even to a field, like a name, that's statically known ahead of the resource actually deploying), so the *job resource's own creation* ended up depending on the endpoint having already deployed successfully. Neither could ever be created on a fresh deploy. Second, even once bootstrapped, Databricks serving endpoints only accept a numeric `entity_version` for a served entity, never an alias, and this generator has no live workspace access at generate time to know the real latest version number — a documented Databricks Asset Bundles limitation, not specific to this project. A bundle-declared endpoint could only ever pin version `"1"`; real promotion has to update `entity_version` directly via the SDK regardless, so owning the endpoint there entirely, rather than half in the bundle and half out of it, is the more honest design. `deploy_agent_<name>` names the endpoint `<domain>-agent-<target>` (not just `<domain>-agent`): dev/test/prod may share a single workspace on Free Edition (see docs/PLAN.md phase 0 notes), so the target has to disambiguate the name itself rather than relying on DAB's dev-mode name prefixing, which doesn't apply to a resource the bundle never declares.
+
+`mlflow.pyfunc.log_model`'s `resources` argument (`src/agent/deploy.py`, `build_resources`) has to declare more than the tools it looks like the agent uses. Declaring only `DatabricksGenieSpace` is not enough to make the Genie tool actually work when called from inside the served model: a real deploy could authenticate the conversation-start call fine but every query Genie then tried to run failed with `PERMISSION_DENIED`, "No access to" every one of the domain's tables. The served identity separately needs `DatabricksSQLWarehouse` (the warehouse backing the Genie space) and a `DatabricksTable` per structured table declared too, or the automatic auth passthrough for those never gets set up. `build_resources` declares all of them together whenever the Genie tool is enabled.
 
 The generator is idempotent and deterministic. CI runs it and diffs against the committed output.
 

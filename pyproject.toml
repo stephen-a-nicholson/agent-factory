@@ -5,6 +5,7 @@ description = "A Databricks Declarative Automation Bundle that turns a domain me
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
+    "databricks-ai-search>=0.78",
     "pydantic>=2.9",
     "pyyaml>=6.0",
 ]
@@ -19,6 +20,7 @@ dev = [
     "pyspark>=3.5,<3.6",
     "delta-spark>=3.2,<3.3",
     "databricks-sdk>=0.40",
+    "mlflow[databricks]>=3.0",
 ]
 
 [tool.ruff]

@@ -225,3 +225,8 @@ spark-warehouse/
 metastore_db/
 derby.log
 
+# Local MLflow tracking store (created by running/importing src/agent/*
+# locally, e.g. via pytest)
+mlflow.db
+mlruns/
+

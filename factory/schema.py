@@ -51,20 +51,11 @@ class DocumentSource(BaseModel):
     category: str
 
 
-class ChunkingConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    strategy: Literal["recursive", "fixed"] = "recursive"
-    chunk_size: int = Field(gt=0)
-    chunk_overlap: int = Field(ge=0)
-
-
 class DocumentsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     loader: Literal["url_list", "volume_folder", "none"]
     sources: list[DocumentSource] = Field(default_factory=list)
-    chunking: ChunkingConfig
     embedding_model: str
 
 

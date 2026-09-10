@@ -5,14 +5,7 @@ import pytest
 from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 
-from src.ingest.structured import (
-    TableSpec,
-    _create_table_ddl,
-    ingest_domain,
-    ingest_table,
-    load_table_specs,
-    primary_key_ddl,
-)
+from src.ingest.structured import TableSpec, ingest_domain, ingest_table, load_table_specs
 
 CATALOG = "spark_catalog"  # the only catalog name a plain local Spark session resolves
 
@@ -81,25 +74,6 @@ def test_load_table_specs(fake_domain: Path):
         TableSpec(name="items", primary_key=["item_id"], description="One row per item"),
         TableSpec(name="orders", primary_key=["order_id", "item_id"], description=None),
     ]
-
-
-def test_primary_key_ddl():
-    spec = TableSpec(name="items", primary_key=["order_id", "item_id"], description=None)
-    statements = primary_key_ddl("cat.schema.items", spec)
-    assert statements == [
-        "ALTER TABLE cat.schema.items DROP CONSTRAINT IF EXISTS items_pk",
-        "ALTER TABLE cat.schema.items ADD CONSTRAINT items_pk "
-        "PRIMARY KEY (order_id, item_id) NOT ENFORCED",
-    ]
-
-
-def test_create_table_ddl_marks_primary_key_not_null(spark, fake_domain: Path):
-    df = spark.read.parquet(str(fake_domain / "domains" / "widgets" / "data" / "orders.parquet"))
-    ddl = _create_table_ddl("cat.schema.orders", df, ["order_id", "item_id"])
-    assert ddl == (
-        "CREATE TABLE cat.schema.orders "
-        "(order_id bigint NOT NULL, item_id bigint NOT NULL, qty bigint) USING DELTA"
-    )
 
 
 def test_ingest_table_writes_data_comment_and_not_null_schema(spark, fake_domain: Path):

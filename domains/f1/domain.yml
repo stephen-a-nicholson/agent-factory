@@ -3,8 +3,7 @@
 # factory needs to write; everything under resources/generated/ is derived
 # from it by factory/generate.py.
 #
-# Phase 1 status: structured and genie blocks. documents and rag are added
-# in phase 2 (see docs/PLAN.md).
+# Phase 2 status: structured, genie, documents and rag blocks all present.
 name: f1
 display_name: Formula 1 Analyst
 description: >
@@ -69,3 +68,37 @@ genie:
     - Which constructor had the fastest average pit stop in 2024?
     - How many races did each driver retire from in 2023?
   benchmarks: eval/genie.jsonl
+
+documents:
+  loader: url_list
+  sources:
+    - url: https://www.fia.com/system/files/documents/fia_2026_f1_regulations_-_section_b_sporting_-_iss_05_-_2026-02-27.pdf
+      title: 2026 Sporting Regulations
+      category: sporting
+    - url: https://www.fia.com/system/files/documents/fia_2026_f1_regulations_-_section_c_technical_-_iss_17_-_2026-04-28.pdf
+      title: 2026 Technical Regulations
+      category: technical
+  embedding_model: databricks-gte-large-en
+
+rag:
+  enabled: true
+  llm: databricks-meta-llama-3-3-70b-instruct
+  system_prompt: |
+    You answer questions about Formula 1 regulations using the retriever
+    tool. Only cite an article number if it appears in the text the
+    retriever actually returned; if the retriever found no matching
+    passages, say so plainly rather than guessing an article number from
+    general knowledge. If the question is about race results, points,
+    standings or pit stops rather than regulations, call the Genie tool
+    instead of guessing, and do not invent statistics.
+  retriever:
+    top_k: 6
+    filter_columns: [category]
+  tools:
+    genie: true
+  eval:
+    dataset: eval/rag.jsonl
+    judges: [correctness, groundedness, relevance]
+    promotion_threshold:
+      correctness: 0.80
+      groundedness: 0.85

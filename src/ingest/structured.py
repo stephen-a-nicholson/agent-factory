@@ -14,19 +14,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import SparkSession
+
+# Databricks runs a spark_python_task by exec()-ing its source directly,
+# with no package context and __file__ unset, so two things below need
+# handling before the sibling-package import that follows: sys.argv[0]
+# stands in for __file__, and the repo root has to be put on sys.path by
+# hand for `from src.ingest.delta import ...` to resolve at all (locally,
+# `uv sync`'s editable install makes src.* importable from anywhere, which
+# is why this only surfaces once deployed). See docs/PLAN.md notes, phase 2.
+try:
+    _REPO_ROOT = Path(__file__).resolve().parents[2]
+except NameError:
+    _REPO_ROOT = Path(sys.argv[0]).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from src.ingest.delta import write_delta_table  # noqa: E402
 
 
 def _default_repo_root() -> Path:
-    """Databricks runs a spark_python_task by exec()-ing its source with
-    __file__ unset, so this can't be a plain module-level `Path(__file__)`
-    constant: that would raise NameError on import, before main() even
-    runs. sys.argv[0] carries the same real path there instead. Locally
-    (pytest, `python -m src.ingest.structured`), __file__ works fine."""
-    try:
-        return Path(__file__).resolve().parents[2]
-    except NameError:
-        return Path(sys.argv[0]).resolve().parents[2]
+    return _REPO_ROOT
 
 
 @dataclass(frozen=True)
@@ -57,40 +65,6 @@ def load_table_specs(domain_yml_path: Path) -> tuple[str, list[TableSpec]]:
     return structured["source"], specs
 
 
-def _escape_sql_string(text: str) -> str:
-    return text.replace("'", "''")
-
-
-def _create_table_ddl(full_name: str, df: DataFrame, not_null_columns: list[str]) -> str:
-    """A primary key constraint requires its columns to be declared NOT
-    NULL. Writing df straight into a new table with `saveAsTable` doesn't
-    reliably carry the DataFrame schema's nullable=False through to the
-    stored table schema, so create the table explicitly from DDL first,
-    with the primary key columns marked NOT NULL, then append into it."""
-    not_null = set(not_null_columns)
-    columns = [
-        f"{f.name} {f.dataType.simpleString()}" + (" NOT NULL" if f.name in not_null else "")
-        for f in df.schema.fields
-    ]
-    return f"CREATE TABLE {full_name} ({', '.join(columns)}) USING DELTA"
-
-
-def primary_key_ddl(full_name: str, spec: TableSpec) -> list[str]:
-    """The DDL that declares spec's primary key as an informational
-    constraint on full_name. Unity-Catalog-only SQL (ADD CONSTRAINT ...
-    PRIMARY KEY ... NOT ENFORCED isn't part of the open-source Spark SQL
-    grammar at all), so this can only run against a real Databricks
-    workspace; see the apply_primary_key_constraint flag on ingest_table
-    for how that's kept testable locally."""
-    constraint_name = f"{spec.name}_pk"
-    primary_key_cols = ", ".join(spec.primary_key)
-    return [
-        f"ALTER TABLE {full_name} DROP CONSTRAINT IF EXISTS {constraint_name}",
-        f"ALTER TABLE {full_name} ADD CONSTRAINT {constraint_name} "
-        f"PRIMARY KEY ({primary_key_cols}) NOT ENFORCED",
-    ]
-
-
 def ingest_table(
     spark: SparkSession,
     parquet_path: Path,
@@ -108,22 +82,15 @@ def ingest_table(
 
     full_name = f"{catalog}.{schema}.{spec.name}"
     df = spark.read.parquet(str(parquet_path))
-
-    # Drop and recreate rather than overwrite: a plain mode("overwrite")
-    # saveAsTable on an existing Delta V2 table requires TRUNCATE
-    # capability that isn't resolved reliably across catalog
-    # implementations, and this is a full-snapshot reload, not an
-    # incremental merge, so there's nothing an overwrite would preserve.
-    spark.sql(f"DROP TABLE IF EXISTS {full_name}")
-    spark.sql(_create_table_ddl(full_name, df, spec.primary_key))
-    df.write.format("delta").mode("append").saveAsTable(full_name)
-
-    if spec.description:
-        spark.sql(f"COMMENT ON TABLE {full_name} IS '{_escape_sql_string(spec.description)}'")
-
-    if apply_primary_key_constraint:
-        for statement in primary_key_ddl(full_name, spec):
-            spark.sql(statement)
+    write_delta_table(
+        spark,
+        df,
+        full_name,
+        table_name=spec.name,
+        primary_key=spec.primary_key,
+        comment=spec.description,
+        apply_primary_key_constraint=apply_primary_key_constraint,
+    )
 
 
 def ingest_domain(

@@ -19,13 +19,21 @@ def test_f1_domain_loads():
     }
 
 
-def test_f1_domain_has_genie_but_not_documents_or_rag_yet():
+def test_f1_domain_has_genie_documents_and_rag():
     domain = load_domain(F1_DOMAIN_PATH)
-    assert domain.documents is None
-    assert domain.rag is None
+
     assert domain.genie is not None
     assert domain.genie.enabled is True
     assert len(domain.genie.sample_questions) == 3
+
+    assert domain.documents is not None
+    assert domain.documents.loader == "url_list"
+    assert len(domain.documents.sources) == 2
+    assert {s.category for s in domain.documents.sources} == {"sporting", "technical"}
+
+    assert domain.rag is not None
+    assert domain.rag.enabled is True
+    assert domain.rag.tools.genie is True
 
 
 def test_discover_domains_is_sorted_and_deterministic():

@@ -1,35 +1,5 @@
 {
   "$defs": {
-    "ChunkingConfig": {
-      "additionalProperties": false,
-      "properties": {
-        "chunk_overlap": {
-          "minimum": 0,
-          "title": "Chunk Overlap",
-          "type": "integer"
-        },
-        "chunk_size": {
-          "exclusiveMinimum": 0,
-          "title": "Chunk Size",
-          "type": "integer"
-        },
-        "strategy": {
-          "default": "recursive",
-          "enum": [
-            "recursive",
-            "fixed"
-          ],
-          "title": "Strategy",
-          "type": "string"
-        }
-      },
-      "required": [
-        "chunk_size",
-        "chunk_overlap"
-      ],
-      "title": "ChunkingConfig",
-      "type": "object"
-    },
     "DocumentSource": {
       "additionalProperties": false,
       "properties": {
@@ -57,9 +27,6 @@
     "DocumentsConfig": {
       "additionalProperties": false,
       "properties": {
-        "chunking": {
-          "$ref": "#/$defs/ChunkingConfig"
-        },
         "embedding_model": {
           "title": "Embedding Model",
           "type": "string"
@@ -83,7 +50,6 @@
       },
       "required": [
         "loader",
-        "chunking",
         "embedding_model"
       ],
       "title": "DocumentsConfig",

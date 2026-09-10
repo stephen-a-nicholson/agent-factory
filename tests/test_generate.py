@@ -20,7 +20,7 @@ def test_render_domain_resources_shape():
     assert resources["volumes"]["f1_raw"]["schema_name"] == "f1"
     assert resources["volumes"]["f1_raw"]["volume_type"] == "MANAGED"
 
-    assert set(resources["jobs"]) == {"ingest_f1", "evaluate_genie_f1"}
+    assert set(resources["jobs"]) == {"ingest_f1", "evaluate_genie_f1", "deploy_agent_f1"}
     job = resources["jobs"]["ingest_f1"]
     assert job["tags"]["owner"] == domain.owner
     task = job["tasks"][0]["spark_python_task"]
@@ -35,6 +35,26 @@ def test_render_domain_resources_shape():
     ]
     assert "existing_cluster_id" not in job["tasks"][0]
     assert "new_cluster" not in job["tasks"][0]
+
+    assert {t["task_key"] for t in job["tasks"]} == {"ingest_structured", "ingest_documents"}
+    documents_task = job["tasks"][1]["spark_python_task"]
+    assert documents_task["python_file"] == "../../src/ingest/documents.py"
+    assert documents_task["parameters"] == [
+        "--domain",
+        "f1",
+        "--catalog",
+        "${var.catalog}",
+        "--schema",
+        "${resources.schemas.f1.name}",
+        "--volume-name",
+        "${resources.volumes.f1_raw.name}",
+    ]
+    assert job["tasks"][1]["environment_key"] == "documents"
+    environments = {e["environment_key"]: e["spec"] for e in job["environments"]}
+    assert environments["default"]["environment_version"] == "2"
+    # ai_parse_document/ai_prep_search require serverless environment
+    # version 3+.
+    assert environments["documents"]["environment_version"] == "3"
 
     assert set(resources["genie_spaces"]) == {"f1_genie"}
     genie = resources["genie_spaces"]["f1_genie"]
@@ -67,6 +87,45 @@ def test_render_domain_resources_shape():
         "${var.catalog}.${resources.schemas.agent_factory.name}.eval_results",
         "--target",
         "${bundle.target}",
+    ]
+
+    assert set(resources["vector_search_indexes"]) == {"f1_chunks"}
+    index = resources["vector_search_indexes"]["f1_chunks"]
+    assert index["name"] == "${var.catalog}.${resources.schemas.f1.name}.f1_chunks"
+    assert index["primary_key"] == "chunk_id"
+    assert index["index_type"] == "DELTA_SYNC"
+    assert index["endpoint_name"] == "${resources.vector_search_endpoints.agent_factory_vs.name}"
+    spec = index["delta_sync_index_spec"]
+    assert spec["source_table"] == "${var.catalog}.${resources.schemas.f1.name}.chunks"
+    assert spec["pipeline_type"] == "${var.vs_sync}"
+    assert spec["embedding_source_columns"] == [
+        {"name": "chunk_to_embed", "embedding_model_endpoint_name": "databricks-gte-large-en"}
+    ]
+
+    # No model_serving_endpoints resource: a real deploy hit a circular
+    # dependency declaring one this way. src/agent/deploy.py owns the
+    # endpoint directly via the SDK instead. See factory/generate.py's
+    # _deploy_agent_job_resource docstring.
+    assert "model_serving_endpoints" not in resources
+
+    deploy_job = resources["jobs"]["deploy_agent_f1"]
+    deploy_task = deploy_job["tasks"][0]["spark_python_task"]
+    assert deploy_task["python_file"] == "../../src/agent/deploy.py"
+    assert deploy_task["parameters"] == [
+        "--domain",
+        "f1",
+        "--catalog",
+        "${var.catalog}",
+        "--schema",
+        "${resources.schemas.f1.name}",
+        "--index-name",
+        "${resources.vector_search_indexes.f1_chunks.name}",
+        "--target",
+        "${bundle.target}",
+        "--genie-space-id",
+        "${resources.genie_spaces.f1_genie.id}",
+        "--warehouse-id",
+        "${var.warehouse_id}",
     ]
 
 

@@ -35,10 +35,28 @@ resources:
           - ${var.catalog}
           - --schema
           - ${resources.schemas.f1.name}
+      - task_key: ingest_documents
+        environment_key: documents
+        spark_python_task:
+          python_file: ../../src/ingest/documents.py
+          parameters:
+          - --domain
+          - f1
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.f1.name}
+          - --volume-name
+          - ${resources.volumes.f1_raw.name}
       environments:
       - environment_key: default
         spec:
           environment_version: '2'
+          dependencies:
+          - pyyaml
+      - environment_key: documents
+        spec:
+          environment_version: '3'
           dependencies:
           - pyyaml
     evaluate_genie_f1:
@@ -68,6 +86,41 @@ resources:
           dependencies:
           - pyyaml
           - databricks-sdk
+    deploy_agent_f1:
+      name: deploy_agent_f1
+      tags:
+        owner: stephennicholson14@gmail.com
+        cost_centre: demo
+        data_classification: public
+      tasks:
+      - task_key: deploy_agent
+        environment_key: default
+        spark_python_task:
+          python_file: ../../src/agent/deploy.py
+          parameters:
+          - --domain
+          - f1
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.f1.name}
+          - --index-name
+          - ${resources.vector_search_indexes.f1_chunks.name}
+          - --target
+          - ${bundle.target}
+          - --genie-space-id
+          - ${resources.genie_spaces.f1_genie.id}
+          - --warehouse-id
+          - ${var.warehouse_id}
+      environments:
+      - environment_key: default
+        spec:
+          environment_version: '2'
+          dependencies:
+          - pyyaml
+          - mlflow[databricks]
+          - databricks-sdk
+          - databricks-ai-search
   genie_spaces:
     f1_genie:
       title: Formula 1 Analyst
@@ -129,3 +182,15 @@ resources:
             ]
           }
         }
+  vector_search_indexes:
+    f1_chunks:
+      name: ${var.catalog}.${resources.schemas.f1.name}.f1_chunks
+      endpoint_name: ${resources.vector_search_endpoints.agent_factory_vs.name}
+      primary_key: chunk_id
+      index_type: DELTA_SYNC
+      delta_sync_index_spec:
+        source_table: ${var.catalog}.${resources.schemas.f1.name}.chunks
+        pipeline_type: ${var.vs_sync}
+        embedding_source_columns:
+        - name: chunk_to_embed
+          embedding_model_endpoint_name: databricks-gte-large-en
