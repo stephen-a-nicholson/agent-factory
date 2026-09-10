@@ -20,7 +20,12 @@ def test_render_domain_resources_shape():
     assert resources["volumes"]["f1_raw"]["schema_name"] == "f1"
     assert resources["volumes"]["f1_raw"]["volume_type"] == "MANAGED"
 
-    assert set(resources["jobs"]) == {"ingest_f1", "evaluate_genie_f1", "deploy_agent_f1"}
+    assert set(resources["jobs"]) == {
+        "ingest_f1",
+        "evaluate_genie_f1",
+        "deploy_agent_f1",
+        "evaluate_f1",
+    }
     job = resources["jobs"]["ingest_f1"]
     assert job["tags"]["owner"] == domain.owner
     task = job["tasks"][0]["spark_python_task"]
@@ -48,6 +53,8 @@ def test_render_domain_resources_shape():
         "${resources.schemas.f1.name}",
         "--volume-name",
         "${resources.volumes.f1_raw.name}",
+        "--index-name",
+        "${var.catalog}.${resources.schemas.f1.name}.f1_chunks",
     ]
     assert job["tasks"][1]["environment_key"] == "documents"
     environments = {e["environment_key"]: e["spec"] for e in job["environments"]}
@@ -119,7 +126,7 @@ def test_render_domain_resources_shape():
         "--schema",
         "${resources.schemas.f1.name}",
         "--index-name",
-        "${resources.vector_search_indexes.f1_chunks.name}",
+        "${var.catalog}.${resources.schemas.f1.name}.f1_chunks",
         "--target",
         "${bundle.target}",
         "--genie-space-id",
@@ -127,6 +134,73 @@ def test_render_domain_resources_shape():
         "--warehouse-id",
         "${var.warehouse_id}",
     ]
+
+    rag_eval_job = resources["jobs"]["evaluate_f1"]
+    assert {t["task_key"] for t in rag_eval_job["tasks"]} == {"evaluate", "promote"}
+    evaluate_task = rag_eval_job["tasks"][0]
+    assert evaluate_task["spark_python_task"]["python_file"] == "../../src/evaluate/rag.py"
+    assert evaluate_task["spark_python_task"]["parameters"] == [
+        "--domain",
+        "f1",
+        "--catalog",
+        "${var.catalog}",
+        "--schema",
+        "${resources.schemas.f1.name}",
+        "--target",
+        "${bundle.target}",
+        "--eval-table",
+        "${var.catalog}.${resources.schemas.agent_factory.name}.eval_results",
+    ]
+    promote_task = rag_eval_job["tasks"][1]
+    assert promote_task["task_key"] == "promote"
+    assert promote_task["depends_on"] == [{"task_key": "evaluate"}]
+    assert promote_task["spark_python_task"]["python_file"] == "../../src/agent/promote.py"
+    assert promote_task["spark_python_task"]["parameters"] == [
+        "--domain",
+        "f1",
+        "--catalog",
+        "${var.catalog}",
+        "--schema",
+        "${resources.schemas.f1.name}",
+        "--target",
+        "${bundle.target}",
+    ]
+    # databricks-ai-search is required here, not just in deploy_agent_f1's
+    # environment: evaluate.py loads rag_agent.py's model to call predict(),
+    # whose retriever tool needs the package. A real run without it failed
+    # with "No module named 'databricks.ai_search'". See docs/PLAN.md
+    # notes, phase 3.
+    rag_eval_deps = rag_eval_job["environments"][0]["spec"]["dependencies"]
+    assert "databricks-ai-search" in rag_eval_deps
+
+    assert set(resources["alerts"]) == {"f1_eval_regression"}
+    alert = resources["alerts"]["f1_eval_regression"]
+    assert alert["warehouse_id"] == "${var.warehouse_id}"
+    assert "rag_eval.correctness', 0.7" in alert["query_text"]
+    assert "rag_eval.groundedness', 0.75" in alert["query_text"]
+    assert "domain = 'f1'" in alert["query_text"]
+    assert alert["evaluation"] == {
+        "comparison_operator": "LESS_THAN",
+        "source": {"name": "margin"},
+        "threshold": {"value": {"double_value": 0}},
+        "empty_result_state": "OK",
+    }
+    assert alert["schedule"]["timezone_id"] == "UTC"
+
+    assert set(resources["dashboards"]) == {"f1_observability"}
+    dashboard = resources["dashboards"]["f1_observability"]
+    assert dashboard["warehouse_id"] == "${var.warehouse_id}"
+    serialized = json.loads(dashboard["serialized_dashboard"])
+    dataset_names = {d["name"] for d in serialized["datasets"]}
+    assert dataset_names == {"eval_history", "latest_scores", "endpoint_traffic"}
+    endpoint_traffic = next(d for d in serialized["datasets"] if d["name"] == "endpoint_traffic")
+    endpoint_query = "".join(endpoint_traffic["queryLines"])
+    assert "f1-agent-${bundle.target}" in endpoint_query
+    assert "system.serving.endpoint_usage" in endpoint_query
+    widget_names = {
+        item["widget"]["name"] for page in serialized["pages"] for item in page["layout"]
+    }
+    assert widget_names == {"eval_history_chart", "latest_scores_table", "endpoint_traffic_chart"}
 
 
 def test_genie_space_is_deterministic():

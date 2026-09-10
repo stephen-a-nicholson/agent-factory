@@ -28,8 +28,8 @@ def test_f1_domain_has_genie_documents_and_rag():
 
     assert domain.documents is not None
     assert domain.documents.loader == "url_list"
-    assert len(domain.documents.sources) == 2
-    assert {s.category for s in domain.documents.sources} == {"sporting", "technical"}
+    assert len(domain.documents.sources) == 3
+    assert {s.category for s in domain.documents.sources} == {"sporting", "technical", "financial"}
 
     assert domain.rag is not None
     assert domain.rag.enabled is True

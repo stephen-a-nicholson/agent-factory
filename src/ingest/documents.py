@@ -34,7 +34,7 @@ except NameError:
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.ingest.delta import write_delta_table  # noqa: E402
+from src.ingest.delta import overwrite_delta_table_in_place  # noqa: E402
 
 
 def _default_repo_root() -> Path:
@@ -125,6 +125,42 @@ def enrich_chunks(
     )
 
 
+def sync_vector_search_index(index_name: str | None) -> None:
+    """Triggers a re-sync of the delta-sync index over the chunks table
+    this job just wrote. A TRIGGERED index does not pick up new data on
+    its own, whether from the underlying table changing or the (in that
+    case unchanged) index resource being redeployed — confirmed by adding
+    a document and finding the index still only had the original chunks
+    until this was called explicitly. See docs/PLAN.md notes, phase 3.
+
+    Does nothing but print a reason, rather than failing the job, if
+    index_name is not given (documents.chunking disabled), the index
+    doesn't exist yet, or a sync is already running. The chunks table
+    write this follows has already succeeded either way, so the worst
+    outcome of skipping a sync here is a stale index, not lost or
+    corrupted data:
+    - "doesn't exist yet" is expected on a domain's very first ingest:
+      the vector search index can't be created until this same ingest job
+      has run once and the bundle is deployed again (the usual chicken-
+      and-egg sequencing used throughout this generator).
+    - "Index is not ready to sync yet... needs to be in one of the
+      following states to sync: COMPLETED, FAILED, CANCELED" is a real
+      error a real deploy hit: a sync triggered moments earlier (by hand,
+      while debugging this) was still in state CREATED, and calling
+      sync_index again while a sync is already in flight is rejected
+      rather than queued or ignored.
+    """
+    if not index_name:
+        return
+    from databricks.sdk import WorkspaceClient
+    from databricks.sdk.errors import BadRequest, NotFound
+
+    try:
+        WorkspaceClient().vector_search_indexes.sync_index(index_name)
+    except (NotFound, BadRequest) as error:
+        print(f"skipping vector search sync for {index_name}: {error}")
+
+
 def ingest_documents(
     spark: SparkSession,
     domain_name: str,
@@ -133,6 +169,7 @@ def ingest_documents(
     volume_name: str,
     repo_root: Path | None = None,
     apply_primary_key_constraint: bool = True,
+    index_name: str | None = None,
 ) -> None:
     domain_dir = (repo_root or _default_repo_root()) / "domains" / domain_name
     documents = load_documents_config(domain_dir / "domain.yml")
@@ -147,7 +184,7 @@ def ingest_documents(
     raw_chunks = spark.sql(parse_and_chunk_sql(documents_dir))
     chunks_df = enrich_chunks(spark, raw_chunks, manifest)
 
-    write_delta_table(
+    overwrite_delta_table_in_place(
         spark,
         chunks_df,
         f"{catalog}.{schema}.chunks",
@@ -157,6 +194,7 @@ def ingest_documents(
         table_properties={"delta.enableChangeDataFeed": "true"},
         apply_primary_key_constraint=apply_primary_key_constraint,
     )
+    sync_vector_search_index(index_name)
 
 
 def main() -> None:
@@ -169,10 +207,22 @@ def main() -> None:
     parser.add_argument(
         "--volume-name", required=True, help="Raw volume name (resolved, may be dev-prefixed)"
     )
+    parser.add_argument(
+        "--index-name",
+        default=None,
+        help="Fully qualified vector search index name to re-sync after writing chunks",
+    )
     args = parser.parse_args()
 
     spark = SparkSession.builder.getOrCreate()
-    ingest_documents(spark, args.domain, args.catalog, args.schema, args.volume_name)
+    ingest_documents(
+        spark,
+        args.domain,
+        args.catalog,
+        args.schema,
+        args.volume_name,
+        index_name=args.index_name,
+    )
 
 
 if __name__ == "__main__":

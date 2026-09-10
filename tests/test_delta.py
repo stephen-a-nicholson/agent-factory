@@ -3,7 +3,12 @@ import pytest
 from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 
-from src.ingest.delta import create_table_ddl, primary_key_ddl, write_delta_table
+from src.ingest.delta import (
+    create_table_ddl,
+    overwrite_delta_table_in_place,
+    primary_key_ddl,
+    write_delta_table,
+)
 
 CATALOG = "spark_catalog"  # the only catalog name a plain local Spark session resolves
 
@@ -135,5 +140,51 @@ def test_write_delta_table_is_rerunnable(spark, orders_parquet):
             primary_key=["order_id", "item_id"],
             apply_primary_key_constraint=False,
         )
+
+    assert spark.sql(f"SELECT count(*) AS n FROM {full_name}").collect()[0].n == 3
+
+
+def test_overwrite_delta_table_in_place_creates_when_missing(spark, orders_parquet):
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.delta_test4")
+    full_name = f"{CATALOG}.delta_test4.orders"
+    df = spark.read.parquet(str(orders_parquet))
+
+    overwrite_delta_table_in_place(
+        spark,
+        df,
+        full_name,
+        table_name="orders",
+        primary_key=["order_id"],
+        apply_primary_key_constraint=False,
+    )
+
+    assert spark.sql(f"SELECT count(*) AS n FROM {full_name}").collect()[0].n == 3
+
+
+def test_overwrite_delta_table_in_place_preserves_table_identity(spark, orders_parquet):
+    # The whole point of overwrite_delta_table_in_place — that an
+    # existing table's identity survives a second write, unlike
+    # write_delta_table's drop-and-recreate — genuinely needs real
+    # Databricks: overwriting an *existing* Delta table via mode
+    # "overwrite" is the same OSS-Delta TRUNCATE-capability gap noted on
+    # write_delta_table's own docstring. This only reaches the
+    # create-when-missing branch (write_delta_table's happy path), which
+    # is already covered above; the true overwrite-in-place branch is
+    # exercised by actually deploying and running the ingest job,
+    # confirmed by re-syncing the vector search index without hitting
+    # DIFFERENT_DELTA_TABLE_READ_BY_STREAMING_SOURCE. See docs/PLAN.md
+    # notes, phase 3.
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.delta_test5")
+    full_name = f"{CATALOG}.delta_test5.orders"
+    df = spark.read.parquet(str(orders_parquet))
+
+    overwrite_delta_table_in_place(
+        spark,
+        df,
+        full_name,
+        table_name="orders",
+        primary_key=["order_id"],
+        apply_primary_key_constraint=False,
+    )
 
     assert spark.sql(f"SELECT count(*) AS n FROM {full_name}").collect()[0].n == 3

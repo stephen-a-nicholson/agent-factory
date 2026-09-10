@@ -172,22 +172,35 @@ class RagAgent(ResponsesAgent):
 
         return WorkspaceClient()
 
-    def _similarity_search(self, index, query: str, vs_filters: dict[str, str] | None) -> str:
+    def _similarity_search(
+        self, index, query: str, vs_filters: dict[str, str] | None
+    ) -> list[dict[str, Any]]:
         result = index.similarity_search(
             query_text=query,
             columns=RETRIEVAL_COLUMNS,
             num_results=self.config.get("top_k", 6),
             filters=vs_filters,
         )
-        return format_retrieved_chunks(rows_from_search_result(result))
+        return rows_from_search_result(result)
 
     @mlflow.trace(span_type=SpanType.RETRIEVER)
-    def _call_retriever(self, query: str, **filters: str) -> str:
+    def _call_retriever(self, query: str, **filters: str) -> list[dict[str, Any]]:
+        """Returns structured rows, not formatted text: mlflow.genai's
+        RetrievalGroundedness/RetrievalRelevance/RetrievalSufficiency
+        scorers extract retrieval context straight from this RETRIEVER
+        span's captured return value, and only recognise a list of dicts
+        with a page_content/content/text key, not a pre-joined string.
+        Confirmed by a real evaluate_<name> run: with this returning a
+        formatted string, mlflow.genai.evaluate()'s result.metrics had no
+        retrieval_groundedness/mean key at all (not a low score, an absent
+        one). _run_tool formats this into text for the tool-call response;
+        the LLM never sees this method's return value directly. See
+        docs/PLAN.md notes, phase 3."""
         index = self._vector_search_index()
         vs_filters = {k: v for k, v in filters.items() if v} or None
 
-        formatted = self._similarity_search(index, query, vs_filters)
-        if vs_filters and formatted == "No matching passages were found.":
+        rows = self._similarity_search(index, query, vs_filters)
+        if vs_filters and not rows:
             # The LLM's filter value isn't guaranteed to match the
             # chunks' actual category values exactly (confirmed against a
             # real deploy: it filtered on "sporting regulations" when the
@@ -196,8 +209,8 @@ class RagAgent(ResponsesAgent):
             # of admitting it hadn't retrieved anything). Retry unfiltered
             # rather than let a bad filter guess silently starve the
             # answer of any grounding at all.
-            formatted = self._similarity_search(index, query, None)
-        return formatted
+            rows = self._similarity_search(index, query, None)
+        return rows
 
     @mlflow.trace(span_type=SpanType.TOOL)
     def _call_genie(self, question: str) -> str:
@@ -236,7 +249,7 @@ class RagAgent(ResponsesAgent):
         if name == RETRIEVER_TOOL_NAME:
             filters = dict(arguments)
             query = filters.pop("query", "")
-            return self._call_retriever(query, **filters)
+            return format_retrieved_chunks(self._call_retriever(query, **filters))
         if name == GENIE_TOOL_NAME:
             return self._call_genie(arguments.get("question", ""))
         return f"Unknown tool: {name}"

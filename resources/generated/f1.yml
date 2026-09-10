@@ -48,6 +48,8 @@ resources:
           - ${resources.schemas.f1.name}
           - --volume-name
           - ${resources.volumes.f1_raw.name}
+          - --index-name
+          - ${var.catalog}.${resources.schemas.f1.name}.f1_chunks
       environments:
       - environment_key: default
         spec:
@@ -105,13 +107,59 @@ resources:
           - --schema
           - ${resources.schemas.f1.name}
           - --index-name
-          - ${resources.vector_search_indexes.f1_chunks.name}
+          - ${var.catalog}.${resources.schemas.f1.name}.f1_chunks
           - --target
           - ${bundle.target}
           - --genie-space-id
           - ${resources.genie_spaces.f1_genie.id}
           - --warehouse-id
           - ${var.warehouse_id}
+      environments:
+      - environment_key: default
+        spec:
+          environment_version: '2'
+          dependencies:
+          - pyyaml
+          - mlflow[databricks]
+          - databricks-sdk
+          - databricks-ai-search
+    evaluate_f1:
+      name: evaluate_f1
+      tags:
+        owner: stephennicholson14@gmail.com
+        cost_centre: demo
+        data_classification: public
+      tasks:
+      - task_key: evaluate
+        environment_key: default
+        spark_python_task:
+          python_file: ../../src/evaluate/rag.py
+          parameters:
+          - --domain
+          - f1
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.f1.name}
+          - --target
+          - ${bundle.target}
+          - --eval-table
+          - ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results
+      - task_key: promote
+        environment_key: default
+        depends_on:
+        - task_key: evaluate
+        spark_python_task:
+          python_file: ../../src/agent/promote.py
+          parameters:
+          - --domain
+          - f1
+          - --catalog
+          - ${var.catalog}
+          - --schema
+          - ${resources.schemas.f1.name}
+          - --target
+          - ${bundle.target}
       environments:
       - environment_key: default
         spec:
@@ -194,3 +242,251 @@ resources:
         embedding_source_columns:
         - name: chunk_to_embed
           embedding_model_endpoint_name: databricks-gte-large-en
+  alerts:
+    f1_eval_regression:
+      display_name: 'Formula 1 Analyst: RAG evaluation regression'
+      warehouse_id: ${var.warehouse_id}
+      query_text: |
+        WITH latest AS (
+          SELECT metric, score,
+                 ROW_NUMBER() OVER (PARTITION BY metric ORDER BY timestamp DESC) AS rn
+          FROM ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results
+          WHERE domain = 'f1' AND target = '${bundle.target}' AND metric LIKE 'rag_eval.%'
+        ),
+        thresholds(metric, threshold) AS (VALUES ('rag_eval.correctness', 0.7), ('rag_eval.groundedness', 0.75))
+        SELECT MIN(latest.score - thresholds.threshold) AS margin
+        FROM thresholds
+        JOIN latest ON latest.metric = thresholds.metric AND latest.rn = 1
+      evaluation:
+        comparison_operator: LESS_THAN
+        source:
+          name: margin
+        threshold:
+          value:
+            double_value: 0
+        empty_result_state: OK
+      schedule:
+        quartz_cron_schedule: 0 0 8 * * ?
+        timezone_id: UTC
+  dashboards:
+    f1_observability:
+      display_name: 'Formula 1 Analyst: observability'
+      warehouse_id: ${var.warehouse_id}
+      serialized_dashboard: |-
+        {
+          "datasets": [
+            {
+              "name": "eval_history",
+              "displayName": "RAG eval score history",
+              "queryLines": [
+                "SELECT metric, score, timestamp\n",
+                "FROM ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results\n",
+                "WHERE domain = 'f1' AND target = '${bundle.target}'\n",
+                "  AND metric LIKE 'rag_eval.%'\n",
+                "ORDER BY timestamp\n"
+              ]
+            },
+            {
+              "name": "latest_scores",
+              "displayName": "Latest RAG eval scores",
+              "queryLines": [
+                "SELECT metric, score, timestamp\n",
+                "FROM (\n",
+                "  SELECT metric, score, timestamp,\n",
+                "         ROW_NUMBER() OVER (PARTITION BY metric ORDER BY timestamp DESC) AS rn\n",
+                "  FROM ${var.catalog}.${resources.schemas.agent_factory.name}.eval_results\n",
+                "  WHERE domain = 'f1' AND target = '${bundle.target}'\n",
+                "    AND metric LIKE 'rag_eval.%'\n",
+                ")\n",
+                "WHERE rn = 1\n",
+                "ORDER BY metric\n"
+              ]
+            },
+            {
+              "name": "endpoint_traffic",
+              "displayName": "Serving endpoint traffic",
+              "queryLines": [
+                "SELECT DATE(u.request_time) AS request_date, COUNT(*) AS request_count\n",
+                "FROM system.serving.endpoint_usage u\n",
+                "JOIN system.serving.served_entities e ON u.served_entity_id = e.served_entity_id\n",
+                "WHERE e.endpoint_name = 'f1-agent-${bundle.target}'\n",
+                "GROUP BY DATE(u.request_time)\n",
+                "ORDER BY request_date\n"
+              ]
+            }
+          ],
+          "pages": [
+            {
+              "name": "observability",
+              "displayName": "Observability",
+              "pageType": "PAGE_TYPE_CANVAS",
+              "layout": [
+                {
+                  "widget": {
+                    "name": "eval_history_chart",
+                    "queries": [
+                      {
+                        "name": "main_query",
+                        "query": {
+                          "datasetName": "eval_history",
+                          "fields": [
+                            {
+                              "name": "timestamp",
+                              "expression": "`timestamp`"
+                            },
+                            {
+                              "name": "score",
+                              "expression": "`score`"
+                            },
+                            {
+                              "name": "metric",
+                              "expression": "`metric`"
+                            }
+                          ],
+                          "disaggregated": true
+                        }
+                      }
+                    ],
+                    "spec": {
+                      "version": 3,
+                      "widgetType": "line",
+                      "encodings": {
+                        "x": {
+                          "fieldName": "timestamp",
+                          "displayName": "Timestamp",
+                          "scale": {
+                            "type": "temporal"
+                          }
+                        },
+                        "y": {
+                          "fieldName": "score",
+                          "displayName": "Score",
+                          "scale": {
+                            "type": "quantitative"
+                          }
+                        },
+                        "color": {
+                          "fieldName": "metric",
+                          "displayName": "Metric",
+                          "scale": {
+                            "type": "categorical"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "position": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 6,
+                    "height": 6
+                  }
+                },
+                {
+                  "widget": {
+                    "name": "latest_scores_table",
+                    "queries": [
+                      {
+                        "name": "main_query",
+                        "query": {
+                          "datasetName": "latest_scores",
+                          "fields": [
+                            {
+                              "name": "metric",
+                              "expression": "`metric`"
+                            },
+                            {
+                              "name": "score",
+                              "expression": "`score`"
+                            },
+                            {
+                              "name": "timestamp",
+                              "expression": "`timestamp`"
+                            }
+                          ],
+                          "disaggregated": true
+                        }
+                      }
+                    ],
+                    "spec": {
+                      "version": 3,
+                      "widgetType": "table",
+                      "encodings": {
+                        "columns": [
+                          {
+                            "fieldName": "metric",
+                            "displayName": "Metric"
+                          },
+                          {
+                            "fieldName": "score",
+                            "displayName": "Score"
+                          },
+                          {
+                            "fieldName": "timestamp",
+                            "displayName": "Last run"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "position": {
+                    "x": 0,
+                    "y": 6,
+                    "width": 6,
+                    "height": 6
+                  }
+                },
+                {
+                  "widget": {
+                    "name": "endpoint_traffic_chart",
+                    "queries": [
+                      {
+                        "name": "main_query",
+                        "query": {
+                          "datasetName": "endpoint_traffic",
+                          "fields": [
+                            {
+                              "name": "request_date",
+                              "expression": "`request_date`"
+                            },
+                            {
+                              "name": "request_count",
+                              "expression": "`request_count`"
+                            }
+                          ],
+                          "disaggregated": true
+                        }
+                      }
+                    ],
+                    "spec": {
+                      "version": 3,
+                      "widgetType": "bar",
+                      "encodings": {
+                        "x": {
+                          "fieldName": "request_date",
+                          "displayName": "Date",
+                          "scale": {
+                            "type": "temporal"
+                          }
+                        },
+                        "y": {
+                          "fieldName": "request_count",
+                          "displayName": "Requests",
+                          "scale": {
+                            "type": "quantitative"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "position": {
+                    "x": 0,
+                    "y": 12,
+                    "width": 6,
+                    "height": 6
+                  }
+                }
+              ]
+            }
+          ]
+        }

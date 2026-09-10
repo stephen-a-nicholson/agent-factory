@@ -1,13 +1,25 @@
-"""Logs a domain's RAG agent, registers it in Unity Catalog, and points
-the serving endpoint at the new version.
+"""Logs a domain's RAG agent and registers it in Unity Catalog as the
+candidate version. Does not touch the serving endpoint: only
+src/agent/promote.py does that, and only after evaluate_<name> passes.
 
 Runs as a Databricks job (spark_python_task, serverless; no Spark APIs
 used, just a convenient way to run a Python file as a job task).
 Config-building and pure logic are plain functions, directly testable;
-log_and_register_agent and update_serving_endpoint need a live MLflow
-tracking server and a live Databricks workspace respectively, so they are
+log_and_register_agent needs a live MLflow tracking server, so it is
 exercised by actually deploying and running the job, per docs/PLAN.md
 notes.
+
+update_serving_endpoint lives in this module (promote.py imports it) but
+main() below deliberately does not call it: an earlier version did, which
+meant the live endpoint started serving a brand new candidate the moment
+it was registered, before evaluate_<name> had scored it at all. A real
+test run of the deliberately-bad-system-prompt scenario confirmed the
+consequence directly: evaluate correctly failed and promote was correctly
+skipped (the champion alias never moved), but the endpoint was already
+serving the failed candidate and stayed that way, since nothing ever
+pointed it back. That directly contradicts docs/DESIGN.md section 6's
+CI/CD flow ("the serving endpoint alias is only moved after eval
+passes"). See docs/PLAN.md notes, phase 3.
 """
 
 from __future__ import annotations
@@ -243,10 +255,12 @@ def main() -> None:
         agent_file, model_config, resources, registered_model_name, experiment_path
     )
     set_alias(registered_model_name, "candidate", version)
-    update_serving_endpoint(endpoint_name, registered_model_name, version)
 
     print(f"registered {registered_model_name} version {version}, alias candidate")
-    print(f"serving endpoint {endpoint_name} now points at version {version}")
+    print(
+        f"serving endpoint {endpoint_name} not updated: "
+        "that happens in promote.py, only once evaluate_<name> passes"
+    )
 
 
 if __name__ == "__main__":

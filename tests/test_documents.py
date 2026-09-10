@@ -11,6 +11,7 @@ from src.ingest.documents import (
     parse_and_chunk_sql,
     slugify,
     source_filename,
+    sync_vector_search_index,
     volume_documents_dir,
 )
 
@@ -179,3 +180,11 @@ def test_enrich_chunks_drops_unmatched_files(spark):
     result = enrich_chunks(spark, raw_chunks, manifest).collect()
 
     assert result == []
+
+
+def test_sync_vector_search_index_noop_without_index_name():
+    # No index_name means documents.chunking is effectively disabled for
+    # this call; should return immediately without even trying to reach
+    # a live workspace.
+    sync_vector_search_index(None)
+    sync_vector_search_index("")

@@ -92,11 +92,11 @@ def test_extract_genie_answer_text_no_attachments():
 
 def test_run_tool_routes_retriever_and_pops_query():
     agent = RagAgent()
-    agent._call_retriever = MagicMock(return_value="retrieved text")
+    agent._call_retriever = MagicMock(return_value=[{"content": "retrieved text"}])
 
     result = agent._run_tool(RETRIEVER_TOOL_NAME, {"query": "cost cap", "category": "sporting"})
 
-    assert result == "retrieved text"
+    assert "retrieved text" in result
     agent._call_retriever.assert_called_once_with("cost cap", category="sporting")
 
 
@@ -165,7 +165,14 @@ def test_call_retriever_retries_without_filters_when_filtered_search_empty():
 
     result = agent._call_retriever("cost cap", category="sporting regulations")
 
-    assert "content a" in result
+    assert result == [
+        {
+            "title": "Title A",
+            "category": "sporting",
+            "content": "content a",
+            "source_url": "https://a",
+        }
+    ]
     assert index.similarity_search.call_count == 2
     first_call, second_call = index.similarity_search.call_args_list
     assert first_call.kwargs["filters"] == {"category": "sporting regulations"}
@@ -180,7 +187,7 @@ def test_call_retriever_does_not_retry_when_no_filters_given():
 
     result = agent._call_retriever("cost cap")
 
-    assert result == "No matching passages were found."
+    assert result == []
     assert index.similarity_search.call_count == 1
 
 
