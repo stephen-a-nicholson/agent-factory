@@ -4,6 +4,19 @@ A Databricks Declarative Automation Bundle that turns a small metadata file desc
 
 See `docs/DESIGN.md` for the full architecture and reasoning behind every design decision, and `docs/PLAN.md` for build progress and every real bug found while building it.
 
+## Why this exists
+
+Most GenAI work on Databricks starts as a notebook that calls an endpoint, and most of it stays there. The hard part of running an agent for a client isn't the agent, it's everything around it: governed data in Unity Catalog, a repeatable deployment, an evaluation that decides whether a new version is allowed to replace the old one, a way back when it isn't, and some way to see what it's doing in production. This repo is an attempt to make all of that the default rather than the follow-up, so the second domain costs one YAML file instead of another month.
+
+Two pieces stand on their own if you don't want the whole factory:
+
+- `gates/`, a quality-gate check for any Databricks bundle (no all-purpose clusters, required tags, serving endpoints scaled to zero outside prod, every job has a test, and so on), usable as a [composite GitHub Action](#using-the-gates-from-another-repository).
+- `docs/PLAN.md`, which records every bug hit while building this against a real workspace. If you're doing similar work, start there.
+
+The Terraform side of the same idea, auditing the platform the agents run on, is [databricks-platform-ops-agent](https://github.com/stephen-a-nicholson/databricks-platform-ops-agent).
+
+**Status**: the full chain (ingest, deploy, evaluate, promote) runs in a dev workspace, a second domain was added with no generator changes, and `bundle init` scaffolding works. The GitHub Actions workflows are written but the complete PR-to-prod-to-rollback cycle has not yet been exercised end to end; `docs/PLAN.md` tracks that. Free Edition works for local use with the caveats noted there. Issues and PRs welcome.
+
 ## Architecture
 
 ```mermaid
